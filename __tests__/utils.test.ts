@@ -1,20 +1,25 @@
-import * as fs from 'fs';
+import fs = require('fs');
 import * as path from 'path';
 import * as utils from '../src/utils';
 
+/**
+ * Mock @actions/core
+ */
 jest.mock('@actions/core', () => ({
   getInput: jest.fn().mockImplementation(key => {
     return ['setup-php'].indexOf(key) !== -1 ? key : '';
-  })
+  }),
+  info: jest.fn()
 }));
 
-async function cleanup(path: string): Promise<void> {
-  fs.unlink(path, error => {
-    if (error) {
-      console.log(error);
-    }
-  });
-}
+/**
+ * Mock fetch.ts
+ */
+jest.mock('../src/fetch', () => ({
+  fetch: jest.fn().mockImplementation(() => {
+    return {data: '{ "latest": "8.1", "5.x": "5.6" }'};
+  })
+}));
 
 describe('Utils tests', () => {
   it('checking readEnv', async () => {
@@ -37,38 +42,25 @@ describe('Utils tests', () => {
     }).rejects.toThrow('Input required and not supplied: DoesNotExist');
   });
 
-  it('checking fetch', async () => {
-    const manifest = await utils.getManifestURL();
-    let response: Record<string, string> = await utils.fetch(manifest);
-    expect(response.error).toBe(undefined);
-    expect(response.data).toContain('latest');
-
-    response = await utils.fetch(manifest, 'invalid_token');
-    expect(response.error).not.toBe(undefined);
-    expect(response.data).toBe(undefined);
-  });
-
   it('checking getManifestURL', async () => {
     expect(await utils.getManifestURL()).toContain('php-versions.json');
   });
 
   it('checking parseVersion', async () => {
-    jest
-      .spyOn(utils, 'fetch')
-      .mockImplementation(
-        async (url, token?): Promise<Record<string, string>> => {
-          if (!token || token === 'valid_token') {
-            return {data: `{ "latest": "8.0", "5.x": "5.6", "url": "${url}" }`};
-          } else {
-            return {error: 'Invalid token'};
-          }
-        }
-      );
     expect(await utils.parseVersion('latest')).toBe('8.1');
     expect(await utils.parseVersion('7')).toBe('7.0');
     expect(await utils.parseVersion('7.4')).toBe('7.4');
     expect(await utils.parseVersion('5.x')).toBe('5.6');
     expect(await utils.parseVersion('4.x')).toBe(undefined);
+  });
+
+  it('checking parseIniFile', async () => {
+    expect(await utils.parseIniFile('production')).toBe('production');
+    expect(await utils.parseIniFile('development')).toBe('development');
+    expect(await utils.parseIniFile('none')).toBe('none');
+    expect(await utils.parseIniFile('php.ini-production')).toBe('production');
+    expect(await utils.parseIniFile('php.ini-development')).toBe('development');
+    expect(await utils.parseIniFile('invalid')).toBe('production');
   });
 
   it('checking asyncForEach', async () => {
@@ -88,41 +80,6 @@ describe('Utils tests', () => {
     expect(await utils.color('success')).toBe('32');
     expect(await utils.color('any')).toBe('32');
     expect(await utils.color('warning')).toBe('33');
-  });
-
-  it('checking readFile', async () => {
-    const darwin: string = fs.readFileSync(
-      path.join(__dirname, '../src/scripts/darwin.sh'),
-      'utf8'
-    );
-    const linux: string = fs.readFileSync(
-      path.join(__dirname, '../src/scripts/linux.sh'),
-      'utf8'
-    );
-    const win32: string = fs.readFileSync(
-      path.join(__dirname, '../src/scripts/win32.ps1'),
-      'utf8'
-    );
-    expect(await utils.readFile('darwin.sh', 'src/scripts')).toBe(darwin);
-    expect(await utils.readFile('darwin.sh', 'src/scripts')).toBe(darwin);
-    expect(await utils.readFile('linux.sh', 'src/scripts')).toBe(linux);
-    expect(await utils.readFile('linux.sh', 'src/scripts')).toBe(linux);
-    expect(await utils.readFile('win32.ps1', 'src/scripts')).toBe(win32);
-    expect(await utils.readFile('win32.ps1', 'src/scripts')).toBe(win32);
-  });
-
-  it('checking writeScripts', async () => {
-    const testString = 'sudo apt-get install php';
-    const runner_dir: string = process.env['RUNNER_TOOL_CACHE'] || '';
-    const script_path: string = path.join(runner_dir, 'test.sh');
-    await utils.writeScript('test.sh', testString);
-    await fs.readFile(
-      script_path,
-      function (error: Error | null, data: Buffer) {
-        expect(testString).toBe(data.toString());
-      }
-    );
-    await cleanup(script_path);
   });
 
   it('checking extensionArray', async () => {
@@ -154,6 +111,9 @@ describe('Utils tests', () => {
     expect(
       await utils.CSVArray('a=E_ALL, b=E_ALL & ~ E_ALL, c="E_ALL", d=\'E_ALL\'')
     ).toEqual(['a=E_ALL', 'b=E_ALL & ~ E_ALL', 'c=E_ALL', 'd=E_ALL']);
+    expect(
+      await utils.CSVArray('a="b=c;d=e", b=\'c=d,e\', c="g=h,i=j", d=g=h, a===')
+    ).toEqual(["a='b=c;d=e'", "b='c=d,e'", "c='g=h,i=j'", "d='g=h'", "a='=='"]);
     expect(await utils.CSVArray('')).toEqual([]);
     expect(await utils.CSVArray(' ')).toEqual([]);
   });
@@ -235,6 +195,7 @@ describe('Utils tests', () => {
     expect(await utils.getCommand('linux', 'tool')).toBe('add_tool ');
     expect(await utils.getCommand('darwin', 'tool')).toBe('add_tool ');
     expect(await utils.getCommand('win32', 'tool')).toBe('Add-Tool ');
+    expect(await utils.getCommand('win32', 'tool_name')).toBe('Add-ToolName ');
     expect(await utils.getCommand('openbsd', 'tool')).toContain(
       'Platform openbsd is not supported'
     );
@@ -254,9 +215,9 @@ describe('Utils tests', () => {
   });
 
   it('checking scriptTool', async () => {
-    expect(await utils.scriptTool('linux')).toBe('bash');
-    expect(await utils.scriptTool('darwin')).toBe('bash');
-    expect(await utils.scriptTool('win32')).toBe('pwsh');
+    expect(await utils.scriptTool('linux')).toBe('bash ');
+    expect(await utils.scriptTool('darwin')).toBe('bash ');
+    expect(await utils.scriptTool('win32')).toBe('pwsh ');
     expect(await utils.scriptTool('openbsd')).toContain(
       'Platform openbsd is not supported'
     );
@@ -300,5 +261,55 @@ describe('Utils tests', () => {
     ).toContain(
       '\nadd_extension_from_source ext https://sub.domain.XN--tld org repo release extension'
     );
+  });
+
+  it('checking readPHPVersion', async () => {
+    expect(await utils.readPHPVersion()).toBe('latest');
+
+    process.env['php-version-file'] = '.phpenv-version';
+    await expect(utils.readPHPVersion()).rejects.toThrow(
+      "Could not find '.phpenv-version' file."
+    );
+
+    const existsSync = jest.spyOn(fs, 'existsSync').mockImplementation();
+    const readFileSync = jest.spyOn(fs, 'readFileSync').mockImplementation();
+
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue('8.1');
+
+    expect(await utils.readPHPVersion()).toBe('8.1');
+
+    process.env['php-version'] = '8.2';
+    expect(await utils.readPHPVersion()).toBe('8.2');
+
+    delete process.env['php-version-file'];
+    delete process.env['php-version'];
+
+    existsSync.mockReturnValueOnce(false).mockReturnValueOnce(true);
+    readFileSync.mockReturnValue(
+      '{ "platform-overrides": { "php": "7.3.25" } }'
+    );
+    expect(await utils.readPHPVersion()).toBe('7.3.25');
+
+    existsSync
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    readFileSync.mockReturnValue(
+      '{ "config": { "platform": { "php": "7.4.33" } } }'
+    );
+    expect(await utils.readPHPVersion()).toBe('7.4.33');
+
+    existsSync.mockClear();
+    readFileSync.mockClear();
+  });
+
+  it('checking setVariable', async () => {
+    let script: string = await utils.setVariable('var', 'command', 'linux');
+    expect(script).toEqual('\nvar="$(command)"\n');
+    script = await utils.setVariable('var', 'command', 'darwin');
+    expect(script).toEqual('\nvar="$(command)"\n');
+    script = await utils.setVariable('var', 'command', 'win32');
+    expect(script).toEqual('\n$var = command\n');
   });
 });

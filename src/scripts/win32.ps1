@@ -3,12 +3,12 @@ param (
   [ValidateNotNull()]
   [ValidateLength(1, [int]::MaxValue)]
   [string]
-  $version = '8.1',
+  $version = '8.2',
   [Parameter(Position = 1, Mandatory = $true)]
   [ValidateNotNull()]
   [ValidateLength(1, [int]::MaxValue)]
   [string]
-  $dist
+  $ini = 'production'
 )
 
 # Function to log start of a operation.
@@ -23,8 +23,27 @@ Function Add-Log($mark, $subject, $message) {
   } else {
     printf "\033[31;1m%s \033[0m\033[34;1m%s \033[0m\033[90;1m%s \033[0m\n" $mark $subject $message
     if($env:fail_fast -eq 'true') {
-      exit 1;
+      Write-Error $message -ErrorAction Stop
     }
+  }
+}
+
+# Function to set output on GitHub Actions.
+Function Set-Output() {
+  param(
+    [Parameter(Position = 0, Mandatory = $true)]
+    [ValidateNotNull()]
+    [ValidateLength(1, [int]::MaxValue)]
+    [string]
+    $output,
+    [Parameter(Position = 1, Mandatory = $true)]
+    [ValidateNotNull()]
+    [ValidateLength(1, [int]::MaxValue)]
+    [string]
+    $value
+  )
+  if ($env:GITHUB_ACTIONS -eq 'true') {
+    Add-Content "$output=$value" -Path $env:GITHUB_OUTPUT -Encoding utf8
   }
 }
 
@@ -64,10 +83,87 @@ Function Add-Path {
   param(
     [string]$PathItem
   )
-  $newPath = (Get-ItemProperty -Path 'hkcu:\Environment' -Name PATH).Path.replace("$PathItem;", '')
-  $newPath = $PathItem + ';' + $newPath
-  Set-ItemProperty -Path 'hkcu:\Environment' -Name Path -Value $newPath
-  Get-PathFromRegistry
+  if("$env:PATH;".contains("$PathItem;")) {
+    return
+  }
+  if ($env:GITHUB_PATH) {
+    Add-Content $PathItem -Path $env:GITHUB_PATH -Encoding utf8
+    $env:PATH += "$PathItem;"
+  } else {
+    $newPath = (Get-ItemProperty -Path 'hkcu:\Environment' -Name PATH).Path.replace("$PathItem;", '')
+    $newPath = $PathItem + ';' + $newPath
+    Set-ItemProperty -Path 'hkcu:\Environment' -Name Path -Value $newPath
+    Get-PathFromRegistry
+  }
+}
+
+# Function to add an environment variable.
+Function Add-Env {
+  param(
+    [string]$EnvName,
+    [string]$EnvValue
+  )
+  if ($env:GITHUB_ENV) {
+    Add-Content "$EnvName=$EnvValue" -Path $env:GITHUB_ENV -Encoding utf8
+  } else {
+    Set-ItemProperty -Path 'hkcu:\Environment' -Name $EnvName -Value $EnvValue
+    Add-ToProfile $current_profile $EnvName "`$env:$EnvName=`"$EnvValue`""
+  }
+}
+
+# Function to add environment variables using a PATH.
+Function Add-EnvPATH {
+  param(
+    [string]$EnvPATH
+  )
+  if(-not(Test-Path $EnvPATH)) {
+    return
+  }
+  $env_file = $env:GITHUB_ENV
+  $env_data = Get-Content -Path $EnvPATH
+  if (-not($env:GITHUB_ENV)) {
+    $env_file = $current_profile
+    $env_data = $env_data | ForEach-Object { '$env:' + $_ }
+  }
+  $env_data | Add-Content -Path $env_file -Encoding utf8
+}
+
+# Function to fetch a file from a URL.
+Function Get-File {
+  param (
+    [string]$Url,
+    [string]$FallbackUrl,
+    [string]$OutFile,
+    [int]$Retries = 3,
+    [int]$TimeoutSec = 0
+  )
+
+  for ($i = 0; $i -lt $Retries; $i++) {
+    try {
+      if($null -ne $OutFile) {
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -TimeoutSec $TimeoutSec
+      } else {
+        Invoke-WebRequest -Uri $Url -TimeoutSec $TimeoutSec
+      }
+      break;
+    } catch {
+      if ($i -eq ($Retries - 1)) {
+        if($FallbackUrl) {
+          try {
+            if($null -ne $OutFile) {
+              Invoke-WebRequest -Uri $FallbackUrl -OutFile $OutFile -TimeoutSec $TimeoutSec
+            } else {
+              Invoke-WebRequest -Uri $FallbackUrl -TimeoutSec $TimeoutSec
+            }
+          } catch {
+            throw "Failed to download the assets from $Url and $FallbackUrl"
+          }
+        } else {
+          throw "Failed to download the assets from $Url"
+        }
+      }
+    }
+  }
 }
 
 # Function to make sure printf is in PATH.
@@ -76,7 +172,7 @@ Function Add-Printf {
     if(Test-Path "C:\msys64\usr\bin\printf.exe") {
       New-Item -Path $bin_dir\printf.exe -ItemType SymbolicLink -Value C:\msys64\usr\bin\printf.exe -Force > $null 2>&1
     } else {
-      Invoke-WebRequest -Uri "$github/shivammathur/printf/releases/latest/download/printf-x64.zip" -OutFile "$bin_dir\printf.zip"
+      Get-File -Url "$github/shivammathur/printf/releases/latest/download/printf-x64.zip" -OutFile "$bin_dir\printf.zip"
       Expand-Archive -Path $bin_dir\printf.zip -DestinationPath $bin_dir -Force
     }
   } else {
@@ -108,36 +204,14 @@ Function Install-PSPackage() {
   $module_path = "$bin_dir\$psm1_path.psm1"
   if(-not (Test-Path $module_path -PathType Leaf)) {
     $zip_file = "$bin_dir\$package.zip"
-    Invoke-WebRequest -Uri $url -OutFile $zip_file
+    Get-File -Url $url -OutFile $zip_file
     Expand-Archive -Path $zip_file -DestinationPath $bin_dir -Force
   }
   Import-Module $module_path
-  Add-ToProfile $current_profile "$package-search" "Import-Module $module_path"
-
   if($null -eq (Get-Command $cmdlet -ErrorAction SilentlyContinue)) {
-    Install-Module -Name $cmdlet -Force
-  }
-}
-
-# Function to link dependencies to PHP directory.
-Function Set-ExtensionPrerequisites
-{
-  Param (
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $deps_dir
-  )
-  $deps = Get-ChildItem -Recurse -Path $deps_dir
-  if ($deps.Count -ne 0) {
-    # Symlink dependencies instead of adding the directory to PATH ...
-    # as other actions change the PATH thus breaking extensions.
-    $deps | ForEach-Object {
-      New-Item -Itemtype SymbolicLink -Path $php_dir -Name $_.Name -Target $_.FullName -Force > $null 2>&1
-    }
+    Install-Module -Name $package -Force
   } else {
-    Remove-Item $deps_dir -Recurse -Force
+    Add-ToProfile $current_profile "$package-search" "Import-Module $module_path"
   }
 }
 
@@ -151,299 +225,91 @@ Function Add-PhpCAInfo {
   }
 }
 
-# Function to add PHP extensions.
-Function Add-Extension {
-  Param (
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $extension,
-    [Parameter(Position = 1, Mandatory = $false)]
-    [ValidateNotNull()]
-    [ValidateSet('stable', 'beta', 'alpha', 'devel', 'snapshot')]
-    [string]
-    $stability = 'stable',
-    [Parameter(Position = 2, Mandatory = $false)]
-    [ValidateNotNull()]
-    [ValidatePattern('^\d+(\.\d+){0,2}$')]
-    [string]
-    $extension_version = ''
-  )
+# Function to set OpenSSL config.
+Function Add-OpenSSLConf {
   try {
-    $extension_info = Get-PhpExtension -Path $php_dir | Where-Object { $_.Name -eq $extension -or $_.Handle -eq $extension }
-    $deps_dir = "$ext_dir\$extension-vc$($installed.VCVersion)-$arch"
-    New-Item $deps_dir -Type Directory -Force > $null 2>&1
-    if ($null -ne $extension_info) {
-      switch ($extension_info.State) {
-        'Builtin' {
-          Add-Log $tick $extension "Enabled"
-        }
-        'Enabled' {
-          Add-Log $tick $extension "Enabled"
-        }
-        default {
-          Enable-ExtensionDependencies $extension
-          Enable-PhpExtension -Extension $extension_info.Handle -Path $php_dir
-          Set-ExtensionPrerequisites $deps_dir
-          Add-Log $tick $extension "Enabled"
-        }
-      }
-    }
-    else {
-      $params = @{ Extension = $extension; MinimumStability = $stability; MaximumStability = $stability; Path = $php_dir; AdditionalFilesPath = $deps_dir; NoDependencies = $true }
-      if($extension_version -ne '') {
-        $params["Version"] = $extension_version
-      }
-      Install-PhpExtension @params
-      Set-ExtensionPrerequisites $deps_dir
-      Add-Log $tick $extension "Installed and enabled"
-    }
-  }
-  catch {
-    Add-Log $cross $extension "Could not install $extension on PHP $($installed.FullVersion)"
-  }
-}
-
-# Function to get a map of extensions and their dependent shared extensions.
-Function Get-ExtensionMap {
-  php -d'error_reporting=0' $dist\..\src\scripts\ext\extension_map.php
-}
-
-# Function to enable extension dependencies which are also extensions.
-Function Enable-ExtensionDependencies {
-  Param (
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $extension
-  )
-  if (-not(Test-Path $env:TEMP\map.orig)) {
-    Get-ExtensionMap | Set-Content -Path $env:TEMP\map.orig
-  }
-  $entry = findstr /r "$extension`:.*" $env:TEMP\map.orig
-  if($entry) {
-    $entry.split(':')[1].trim().split(' ') | ForEach-Object {
-      if (-not(php -m | findstr -i $_)) {
-        Enable-PhpExtension -Extension $_ -Path $php_dir
-      }
-    }
-  }
-}
-
-# Function to disable dependent extensions.
-Function Disable-DependentExtensions() {
-  Param (
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $extension
-  )
-  Get-ExtensionMap | Select-String -Pattern ".*:.*\s$extension(\s|$)" | ForEach-Object {
-    $dependent = $_.Matches[0].Value.split(':')[0];
-    Disable-ExtensionHelper -Extension $dependent -DisableDependents
-    Add-Log $tick ":$extension" "Disabled $dependent as it depends on $extension"
-  }
-}
-
-# Helper function to disable an extension.
-Function Disable-ExtensionHelper() {
-  Param (
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $extension,
-    [switch] $DisableDependents
-  )
-  if($DisableDependents) {
-    Disable-DependentExtensions $extension
-  }
-  Disable-PhpExtension -Extension $extension -Path $php_dir
-}
-
-# Function to disable an extension.
-Function Disable-Extension() {
-  Param (
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $extension,
-    [Parameter(Position = 1, Mandatory = $false)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $DisableDependents
-  )
-  if(php -m | findstr -i $extension) {
-    if(Test-Path $ext_dir\php_$extension.dll) {
-      try {
-        $params = @{ Extension = $extension; DisableDependents = ($DisableDependents -ne 'false') }
-        Disable-ExtensionHelper @params
-        Add-Log $tick ":$extension" "Disabled"
-      } catch {
-        Add-Log $cross ":$extension" "Could not disable $extension on PHP $($installed.FullVersion)"
-      }
-    } else {
-      Add-Log $cross ":$extension" "Could not disable $extension on PHP $($installed.FullVersion) as it not a shared extension"
-    }
-  } elseif(Test-Path $ext_dir\php_$extension.dll) {
-    Add-Log $tick ":$extension" "Disabled"
-  } else {
-    Add-Log $tick ":$extension" "Could not find $extension on PHP $($installed.FullVersion)"
-  }
-}
-
-# Function to disable shared extensions.
-Function Disable-AllShared() {
-  (Get-Content $php_dir\php.ini) | Where-Object {$_ -notmatch '^(zend_)?extension\s*='} | Set-Content $php_dir\php.ini
-  Add-Log $tick "none" "Disabled all shared extensions"
-}
-
-# Function to configure composer.
-Function Edit-ComposerConfig() {
-  Param(
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $tool_path
-  )
-  Copy-Item $tool_path -Destination "$tool_path.phar"
-  php -r "try {`$p=new Phar('$tool_path.phar', 0);exit(0);} catch(Exception `$e) {exit(1);}"
-  if ($? -eq $False) {
-    Add-Log "$cross" "composer" "Could not download composer"
-    exit 1;
-  }
-  if (-not(Test-Path $composer_json)) {
-    Set-Content -Path $composer_json -Value "{}"
-  }
-  composer -q config -g process-timeout 0
-  Write-Output $composer_bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8
-  if (Test-Path env:COMPOSER_TOKEN) {
-    composer -q config -g github-oauth.github.com $env:COMPOSER_TOKEN
-  }
-}
-
-# Function to extract tool version.
-Function Get-ToolVersion() {
-  Param (
-      [Parameter(Position = 0, Mandatory = $true)]
-      $tool,
-      [Parameter(Position = 1, Mandatory = $true)]
-      $param
-  )
-  $alp = "[a-zA-Z0-9]"
-  $version_regex = "[0-9]+((\.{1}$alp+)+)(\.{0})(-$alp+){0,1}"
-  if($tool -eq 'composer') {
-    if ($param -eq 'snapshot') {
-      $composer_version = (Select-String -Pattern "const\sBRANCH_ALIAS_VERSION" -Path $bin_dir\composer -Raw | Select-String -Pattern $version_regex | ForEach-Object { $_.matches.Value }) + '+' + (Select-String -Pattern "const\sVERSION" -Path $bin_dir\composer -Raw | Select-String -Pattern "[a-zA-Z0-9]+" -AllMatches | ForEach-Object { $_.matches[2].Value })
-    } else {
-      $composer_version = Select-String -Pattern "const\sVERSION" -Path $bin_dir\composer -Raw | Select-String -Pattern $version_regex | ForEach-Object { $_.matches.Value }
-    }
-    Set-Variable -Name 'composer_version' -Value $composer_version -Scope Global
-    return "$composer_version"
-  }
-  return . $tool $param 2> $null | ForEach-Object { $_ -replace "composer $version_regex", '' } | Select-String -Pattern $version_regex | Select-Object -First 1 | ForEach-Object { $_.matches.Value }
-}
-
-# Function to add tools.
-Function Add-Tool() {
-  Param (
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    $url,
-    [Parameter(Position = 1, Mandatory = $true)]
-    [ValidateNotNull()]
-    $tool,
-    [Parameter(Position = 2, Mandatory = $true)]
-    [ValidateNotNull()]
-    $ver_param
-  )
-  if (Test-Path $bin_dir\$tool) {
-    Remove-Item $bin_dir\$tool
-  }
-  if($url.Count -gt 1) {
-    $url = $url[0]
-  }
-  $tool_path = "$bin_dir\$tool"
-  if (($url | Split-Path -Extension) -eq ".exe") {
-    $tool_path = "$tool_path.exe"
-  }
-  try {
-    Invoke-WebRequest -Uri $url -OutFile $tool_path
+    Set-OpenSSLConf -Target User
   } catch {
-    if($url -match '.*github.com.*releases.*latest.*') {
-      try {
-        $url = $url.replace("releases/latest/download", "releases/download/" + ([regex]::match((Invoke-WebRequest -Uri ($url.split('/release')[0] + "/releases")).Content, "([0-9]+\.[0-9]+\.[0-9]+)/" + ($url.Substring($url.LastIndexOf("/") + 1))).Groups[0].Value).split('/')[0])
-        Invoke-WebRequest -Uri $url -OutFile $tool_path
-      } catch { }
+    New-Item $php_dir\extras\openssl.cnf -Type File -Force > $null 2>&1
+    Set-OpenSSLConf -Path $php_dir\extras\openssl.cnf -Target User
+  }
+  Add-Env -EnvName OPENSSL_CONF -EnvValue $env:OPENSSL_CONF
+}
+
+# Function to set PHP config.
+Function Add-PhpConfig {
+  $current = Get-Content -Path $php_dir\php.ini-current -ErrorAction SilentlyContinue
+  if($ini -eq 'development' -or ($ini -eq 'production' -and $current -and $current -ne 'production')) {
+    Copy-Item -Path $php_dir\php.ini-$ini -Destination $php_dir\php.ini -Force
+  } elseif ($ini -eq 'none') {
+    Set-Content -Path $php_dir\php.ini -Value ''
+  }
+  Set-Content -Path $php_dir\php.ini-current -Value $ini
+  $ini_config_dir = "$src\configs\ini"
+  $ini_files = @("$ini_config_dir\php.ini")
+  $version -match $jit_versions -and ($ini_files += ("$ini_config_dir\jit.ini")) > $null 2>&1
+  $version -match $xdebug3_versions -and ($ini_files += ("$ini_config_dir\xdebug.ini")) > $null 2>&1
+  Add-Content -Path $ini_config_dir\php.ini -Value extension_dir=$ext_dir
+  Get-Content -Path $ini_files | Add-Content -Path $php_dir\php.ini
+}
+
+# Function to get PHP from GitHub releases cache
+Function Set-PhpCache {
+  try {
+    try {
+      $release = Invoke-RestMethod https://api.github.com/repos/shivammathur/php-builder-windows/releases/tags/php$version
+      $asset = $release.assets | ForEach-Object {
+        if($_.name -match "php-$version.[0-9]+$env:PHPTS-Win32-.*-$arch.zip") {
+          return $_.name
+        }
+      } | Select-Object -Last 1
+      if($null -eq $asset) {
+        throw "Asset not found"
+      }
+    } catch {
+      $release = Get-File -Url $php_builder/releases/expanded_assets/php$version
+      $asset = $release.links.href | ForEach-Object {
+        if($_ -match "php-$version.[0-9]+$env:PHPTS-Win32-.*-$arch.zip") {
+          return $_.split('/')[-1]
+        }
+      } | Select-Object -Last 1
     }
-  }
-  if (((Get-ChildItem -Path $bin_dir/* | Where-Object Name -Match "^$tool(.exe|.phar)*$").Count -gt 0)) {
-    $bat_content = @()
-    $bat_content += "@ECHO off"
-    $bat_content += "setlocal DISABLEDELAYEDEXPANSION"
-    $bat_content += "SET BIN_TARGET=%~dp0/" + $tool
-    $bat_content += "php %BIN_TARGET% %*"
-    Set-Content -Path $bin_dir\$tool.bat -Value $bat_content
-    Add-ToolsHelper $tool
-    Add-ToProfile $current_profile $tool "New-Alias $tool $bin_dir\$tool.bat" >$null 2>&1
-    $tool_version = Get-ToolVersion $tool $ver_param
-    Add-Log $tick $tool "Added $tool $tool_version"
-  } else {
-    Add-Log $cross $tool "Could not add $tool"
-  }
+    Get-File -Url $php_builder/releases/download/php$version/$asset -OutFile $php_dir\$asset
+    Set-PhpDownloadCache -Path $php_dir CurrentUser
+  } catch { }
 }
 
-# Function to setup a tool using composer.
-Function Add-Composertool() {
-  Param (
-    [Parameter(Position = 0, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $tool,
-    [Parameter(Position = 1, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $release,
-    [Parameter(Position = 2, Mandatory = $true)]
-    [ValidateNotNull()]
-    [ValidateLength(1, [int]::MaxValue)]
-    [string]
-    $prefix
-  )
-  if($tool -match "prestissimo|composer-prefetcher" -and $composer_version.split('.')[0] -ne "1") {
-    Write-Output "::warning:: Skipping $tool, as it does not support Composer $composer_version. Specify composer:v1 in tools to use $tool"
-    Add-Log $cross $tool "Skipped"
-    Return
+# Function to add debug symbols to PHP.
+Function Add-DebugSymbols {
+  $dev = if ($version -match $nightly_versions) { '-dev' } else { '' }
+  try {
+    $release = Invoke-RestMethod https://api.github.com/repos/shivammathur/php-builder-windows/releases/tags/php$version
+    $asset = $release.assets | ForEach-Object {
+      if($_.name -match "php-debug-pack-$version.[0-9]+$dev$env:PHPTS-Win32-.*-$arch.zip") {
+        return $_.name
+      }
+    } | Select-Object -Last 1
+  } catch {
+    $release = Get-File -Url $php_builder/releases/expanded_assets/php$version
+    $asset = $release.links.href | ForEach-Object {
+      if($_ -match "php-debug-pack-$version.[0-9]+$dev$env:PHPTS-Win32-.*-$arch.zip") {
+        return $_.split('/')[-1]
+      }
+    } | Select-Object -Last 1
   }
-  if(Test-Path $composer_lock) {
-    Remove-Item -Path $composer_lock -Force
-  }
-  (composer global require $prefix$release 2>&1 | Tee-Object -FilePath $env:APPDATA\Composer\composer.log) >$null 2>&1
-  $json = findstr $prefix$tool $env:APPDATA\Composer\composer.json
-  $log = findstr $prefix$tool $env:APPDATA\Composer\composer.log
-  if(Test-Path $composer_bin\composer) {
-    Copy-Item -Path "$bin_dir\composer" -Destination "$composer_bin\composer" -Force
-  }
-  Add-ToolsHelper $tool
-  if($json) {
-    $tool_version = Get-ToolVersion "Write-Output" "$log"
-    Add-Log $tick $tool "Added $tool $tool_version"
-  } else {
-    Add-Log $cross $tool "Could not setup $tool"
-  }
+  Get-File -Url $php_builder/releases/download/php$version/$asset -OutFile $php_dir\$asset
+  Expand-Archive -Path $php_dir\$asset -DestinationPath $php_dir -Force
+  Get-ChildItem -Path $php_dir -Filter php_*.pdb | Move-Item -Destination $ext_dir
 }
 
-# Function to handle request to add PECL.
-Function Add-Pecl() {
-  Add-Log $tick "PECL" "Use extensions input to setup PECL extensions on windows"
+# Function to install nightly version of PHP
+Function Install-PhpNightly {
+  Get-File -Url $php_builder/releases/latest/download/Get-PhpNightly.ps1 -FallbackUrl https://dl.cloudsmith.io/public/shivammathur/php-builder-windows/raw/files/Get-PhpNightly.ps1 -OutFile $php_dir\Get-PhpNightly.ps1 > $null 2>&1
+  & $php_dir\Get-PhpNightly.ps1 -Architecture $arch -ThreadSafe $ts -Path $php_dir -Version $version > $null 2>&1
+  if(Test-Path $php_dir\COMMIT) {
+    return " ($( Get-Content $php_dir\COMMIT ))"
+  }
+  return;
 }
 
 # Variables
@@ -454,13 +320,11 @@ $ext_dir = "$php_dir\ext"
 $bin_dir = $php_dir
 $github = 'https://github.com'
 $php_builder = "$github/shivammathur/php-builder-windows"
-$composer_bin = "$env:APPDATA\Composer\vendor\bin"
-$composer_json = "$env:APPDATA\Composer\composer.json"
-$composer_lock = "$env:APPDATA\Composer\composer.lock"
 $current_profile = "$env:TEMP\setup-php.ps1"
 $ProgressPreference = 'SilentlyContinue'
 $jit_versions = '8.[0-9]'
-$nightly_versions = '8.[1-9]'
+$nightly_versions = '8.[2-9]'
+$xdebug3_versions = "7.[2-4]|8.[0-9]"
 $enable_extensions = ('openssl', 'curl', 'mbstring')
 
 $arch = 'x64'
@@ -470,9 +334,24 @@ if(-not([Environment]::Is64BitOperatingSystem) -or $version -lt '7.0') {
 
 $ts = $env:PHPTS -eq 'ts'
 if($env:PHPTS -ne 'ts') {
-  $env:PHPTS = 'nts'
+  $env:PHPTS = '-nts'
+} else {
+  $env:PHPTS = ''
 }
-if($env:RUNNER -eq 'self-hosted') {
+
+if ( $env:GITHUB_ACTIONS -eq 'true') {
+  $env:GROUP = '::group::'
+  $env:END_GROUP = '::endgroup::'
+} else {
+  $env:GROUP = ''
+  $env:END_GROUP = ''
+}
+
+if(-not($env:ImageOS) -and -not($env:ImageVersion)) {
+  if($env:RUNNER -eq 'github') {
+    Add-Log $cross "Runner" "Runner set as github in self-hosted environment"
+    Write-Error "Runner set as github in self-hosted environment" -ErrorAction Stop
+  }
   $bin_dir = 'C:\tools\bin'
   $php_dir = "$php_dir$version"
   $ext_dir = "$php_dir\ext"
@@ -482,14 +361,15 @@ if($env:RUNNER -eq 'self-hosted') {
   if($version -lt 5.6) {
     Add-Log $cross "PHP" "PHP $version is not supported on self-hosted runner"
     Start-Sleep 1
-    exit 1
+    Write-Error "PHP $version is not supported on self-hosted runner" -ErrorAction Stop
   }
-  if ((Get-InstalledModule).Name -notcontains 'VcRedist') {
+  if ($null -eq (Get-Module -ListAvailable -Name VcRedist)) {
     Install-Module -Name VcRedist -Force
   }
   New-Item $php_dir -Type Directory -Force > $null 2>&1
   Add-Path -PathItem $php_dir
   setx PHPROOT $php_dir >$null 2>&1
+  Add-Env -EnvName RUNNER_TOOL_CACHE -EnvValue $env:TEMP
 } else {
   $current_profile = "$PSHOME\Profile.ps1"
   if(-not(Test-Path -LiteralPath $current_profile)) {
@@ -497,7 +377,9 @@ if($env:RUNNER -eq 'self-hosted') {
   }
 }
 
-. $dist\..\src\scripts\tools\add_tools.ps1
+$src = Join-Path -Path $PSScriptRoot -ChildPath \..
+. $src\scripts\tools\add_tools.ps1
+. $src\scripts\extensions\add_extensions.ps1
 
 Add-Printf >$null 2>&1
 Step-Log "Setup PhpManager"
@@ -520,47 +402,45 @@ if (Test-Path -LiteralPath $php_dir -PathType Container) {
 $status = "Installed"
 $extra_version = ""
 if ($null -eq $installed -or -not("$($installed.Version).".StartsWith(($version -replace '^(\d+(\.\d+)*).*', '$1.'))) -or $ts -ne $installed.ThreadSafe) {
-  if ($version -lt '7.0' -and (Get-InstalledModule).Name -notcontains 'VcRedist') {
+  if ($version -lt '7.0' -and ($null -eq (Get-Module -ListAvailable -Name VcRedist))) {
     Install-PSPackage VcRedist VcRedist-main\VcRedist\VcRedist "$github/aaronparker/VcRedist/archive/main.zip" Get-VcList >$null 2>&1
   }
   try {
     if ($version -match $nightly_versions) {
-      Invoke-WebRequest -UseBasicParsing -Uri $php_builder/releases/latest/download/Get-PhpNightly.ps1 -OutFile $php_dir\Get-PhpNightly.ps1 > $null 2>&1
-      & $php_dir\Get-PhpNightly.ps1 -Architecture $arch -ThreadSafe $ts -Path $php_dir -Version $version > $null 2>&1
-      if(Test-Path $php_dir\COMMIT) {
-        $extra_version = " ($( Get-Content $php_dir\COMMIT ))"
-      }
+      $extra_version = Install-PhpNightly
     } else {
-      Install-Php -Version $version -Architecture $arch -ThreadSafe $ts -InstallVC -Path $php_dir -TimeZone UTC -InitialPhpIni Production -Force > $null 2>&1
+      Set-PhpCache
+      Install-Php -Version $version -Architecture $arch -ThreadSafe $ts -InstallVC -Path $php_dir -TimeZone UTC -InitialPhpIni production -Force > $null 2>&1
     }
+    Add-PhpConfig
   } catch { }
 } else {
-  Set-PhpIniKey -Key 'extension_dir' -Value $ext_dir -Path $php_dir
-  if($version -match $jit_versions) {
-    ('opcache.enable=1', 'opcache.jit_buffer_size=256M', 'opcache.jit=1235') | ForEach-Object { $p=$_.split('='); Set-PhpIniKey -Key $p[0] -Value $p[1] -Path $php_dir }
-  }
   if($env:update -eq 'true') {
     Update-Php $php_dir >$null 2>&1
     $status = "Updated to"
   } else {
     $status = "Found"
   }
+  Add-PhpConfig
+}
+
+if($env:DEBUG -eq 'true') {
+  Add-DebugSymbols
 }
 
 $installed = Get-Php -Path $php_dir
 if($installed.MajorMinorVersion -ne $version) {
   Add-Log $cross "PHP" "Could not setup PHP $version"
-  exit 1
+  Write-Error "Could not setup PHP $version" -ErrorAction Stop
 }
-('date.timezone=UTC', 'memory_limit=-1', 'xdebug.mode=coverage') | ForEach-Object { $p=$_.split('='); Set-PhpIniKey -Key $p[0] -Value $p[1] -Path $php_dir }
 if($version -lt "5.5") {
-  ('libeay32.dll', 'ssleay32.dll') | ForEach-Object { Invoke-WebRequest -Uri "$php_builder/releases/download/openssl-1.0.2u/$_" -OutFile $php_dir\$_ >$null 2>&1 }
+  ('libeay32.dll', 'ssleay32.dll') | ForEach-Object -Parallel { Get-File -Url "$using:php_builder/releases/download/openssl-1.0.2u/$_" -OutFile $using:php_dir\$_ >$null 2>&1 }
 } else {
   $enable_extensions += ('opcache')
 }
 Enable-PhpExtension -Extension $enable_extensions -Path $php_dir
 Add-PhpCAInfo
-Copy-Item -Path $dist\..\src\configs\pm\*.json -Destination $env:RUNNER_TOOL_CACHE
-New-Item -ItemType Directory -Path $composer_bin -Force > $null 2>&1
-Write-Output "::set-output name=php-version::$($installed.FullVersion)"
+Add-OpenSSLConf
+Copy-Item -Path $src\configs\pm\*.json -Destination $env:RUNNER_TOOL_CACHE
+Set-Output php-version $($installed.FullVersion)
 Add-Log $tick "PHP" "$status PHP $($installed.FullVersion)$extra_version"

@@ -8,7 +8,11 @@
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -51,28 +55,28 @@ async function addINIValuesWindows(ini_values_csv) {
     return ('Add-Content "$php_dir\\php.ini" "' + ini_values.join('\n') + '"' + script);
 }
 exports.addINIValuesWindows = addINIValuesWindows;
-async function addINIValues(ini_values_csv, os_version, no_step = false) {
+async function addINIValues(ini_values_csv, os, no_step = false) {
     let script = '\n';
     switch (no_step) {
         case true:
             script +=
-                (await utils.stepLog('Add php.ini values', os_version)) +
-                    (await utils.suppressOutput(os_version)) +
+                (await utils.stepLog('Add php.ini values', os)) +
+                    (await utils.suppressOutput(os)) +
                     '\n';
             break;
         case false:
         default:
-            script += (await utils.stepLog('Add php.ini values', os_version)) + '\n';
+            script += (await utils.stepLog('Add php.ini values', os)) + '\n';
             break;
     }
-    switch (os_version) {
+    switch (os) {
         case 'win32':
             return script + (await addINIValuesWindows(ini_values_csv));
         case 'darwin':
         case 'linux':
             return script + (await addINIValuesUnix(ini_values_csv));
         default:
-            return await utils.log('Platform ' + os_version + ' is not supported', os_version, 'error');
+            return await utils.log('Platform ' + os + ' is not supported', os, 'error');
     }
 }
 exports.addINIValues = addINIValues;
@@ -80,14 +84,18 @@ exports.addINIValues = addINIValues;
 
 /***/ }),
 
-/***/ 730:
+/***/ 5730:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -107,7 +115,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.addCoverage = exports.disableCoverage = exports.addCoveragePCOV = exports.addCoverageXdebug = exports.checkXdebugError = void 0;
 const utils = __importStar(__nccwpck_require__(918));
-const extensions = __importStar(__nccwpck_require__(390));
+const extensions = __importStar(__nccwpck_require__(3390));
 const config = __importStar(__nccwpck_require__(88));
 async function checkXdebugError(extension, version) {
     if ((/^5\.[3-6]$|^7\.[0-1]$/.test(version) && extension == 'xdebug3') ||
@@ -117,69 +125,71 @@ async function checkXdebugError(extension, version) {
     return '';
 }
 exports.checkXdebugError = checkXdebugError;
-async function addCoverageXdebug(extension, version, os_version, pipe) {
+async function addCoverageXdebug(extension, version, os, pipe) {
     let script = '\n';
-    let message = await checkXdebugError(extension, version);
-    let status = '$cross';
-    if (!message) {
+    const error = await checkXdebugError(extension, version);
+    if (!error) {
         script +=
-            (await extensions.addExtension(':pcov:false', version, os_version, true)) + pipe;
+            (await extensions.addExtension(':pcov:false', version, os, true)) + pipe;
         extension = extension == 'xdebug3' ? 'xdebug' : extension;
         script +=
-            (await extensions.addExtension(extension, version, os_version, true)) +
-                pipe;
-        message = 'Xdebug enabled as coverage driver';
-        status = '$tick';
+            (await extensions.addExtension(extension, version, os, true)) + pipe;
+        script += await utils.setVariable('xdebug_version', 'php -r "echo phpversion(\'xdebug\');"', os);
+        script +=
+            (await utils.getCommand(os, 'extension_log')) +
+                'xdebug "Xdebug $xdebug_version enabled as coverage driver"';
     }
-    script += await utils.addLog(status, extension, message, os_version);
+    else {
+        script += await utils.addLog('$cross', extension, error, os);
+    }
     return script;
 }
 exports.addCoverageXdebug = addCoverageXdebug;
-async function addCoveragePCOV(version, os_version, pipe) {
+async function addCoveragePCOV(version, os, pipe) {
     let script = '\n';
     switch (true) {
         default:
             script +=
-                (await extensions.addExtension(':xdebug:false', version, os_version, true)) + pipe;
-            script +=
-                (await extensions.addExtension('pcov', version, os_version, true)) +
+                (await extensions.addExtension(':xdebug:false', version, os, true)) +
                     pipe;
             script +=
-                (await config.addINIValues('pcov.enabled=1', os_version, true)) + '\n';
-            script += await utils.addLog('$tick', 'coverage: pcov', 'PCOV enabled as coverage driver', os_version);
+                (await extensions.addExtension('pcov', version, os, true)) + pipe;
+            script += (await config.addINIValues('pcov.enabled=1', os, true)) + '\n';
+            script += await utils.setVariable('pcov_version', 'php -r "echo phpversion(\'pcov\');"', os);
+            script +=
+                (await utils.getCommand(os, 'extension_log')) +
+                    'pcov "PCOV $pcov_version enabled as coverage driver"';
             break;
         case /5\.[3-6]|7\.0/.test(version):
-            script += await utils.addLog('$cross', 'pcov', 'PHP 7.1 or newer is required', os_version);
+            script += await utils.addLog('$cross', 'pcov', 'PHP 7.1 or newer is required', os);
             break;
     }
     return script;
 }
 exports.addCoveragePCOV = addCoveragePCOV;
-async function disableCoverage(version, os_version, pipe) {
+async function disableCoverage(version, os, pipe) {
     let script = '\n';
     script +=
-        (await extensions.addExtension(':pcov:false', version, os_version, true)) +
-            pipe;
+        (await extensions.addExtension(':pcov:false', version, os, true)) + pipe;
     script +=
-        (await extensions.addExtension(':xdebug:false', version, os_version, true)) + pipe;
-    script += await utils.addLog('$tick', 'none', 'Disabled Xdebug and PCOV', os_version);
+        (await extensions.addExtension(':xdebug:false', version, os, true)) + pipe;
+    script += await utils.addLog('$tick', 'none', 'Disabled Xdebug and PCOV', os);
     return script;
 }
 exports.disableCoverage = disableCoverage;
-async function addCoverage(coverage_driver, version, os_version) {
+async function addCoverage(coverage_driver, version, os) {
     coverage_driver = coverage_driver.toLowerCase();
-    const script = '\n' + (await utils.stepLog('Setup Coverage', os_version));
-    const pipe = (await utils.suppressOutput(os_version)) + '\n';
+    const script = '\n' + (await utils.stepLog('Setup Coverage', os));
+    const pipe = (await utils.suppressOutput(os)) + '\n';
     switch (coverage_driver) {
         case 'pcov':
-            return script + (await addCoveragePCOV(version, os_version, pipe));
+            return script + (await addCoveragePCOV(version, os, pipe));
         case 'xdebug':
         case 'xdebug2':
         case 'xdebug3':
-            return (script +
-                (await addCoverageXdebug(coverage_driver, version, os_version, pipe)));
+            return (script + (await addCoverageXdebug(coverage_driver, version, os, pipe)));
         case 'none':
-            return script + (await disableCoverage(version, os_version, pipe));
+            return script + (await disableCoverage(version, os, pipe));
         default:
             return '';
     }
@@ -189,14 +199,18 @@ exports.addCoverage = addCoverage;
 
 /***/ }),
 
-/***/ 390:
+/***/ 3390:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -234,25 +248,29 @@ async function addExtensionDarwin(extension_csv, version) {
             case /.+-.+\/.+@.+/.test(extension):
                 add_script += await utils.parseExtensionSource(extension, ext_prefix);
                 return;
-            case /^(5\.[3-6]|7\.[0-4]|8\.0)blackfire(-\d+\.\d+\.\d+)?$/.test(version_extension):
-            case /^couchbase$|^geos$|^pdo_oci$|^oci8$|^(pecl_)?http|^pdo_firebird$/.test(extension):
+            case /^(7\.4|8\.[0-3])relay(-v?\d+\.\d+\.\d+)?$/.test(version_extension):
+            case /^(5\.[3-6]|7\.[0-4]|8\.[0-2])blackfire(-\d+\.\d+\.\d+)?$/.test(version_extension):
+            case /^couchbase|^event|^gearman$|^geos$|^pdo_oci$|^oci8$|^(pecl_)?http|^pdo_firebird$/.test(extension):
             case /^(5\.[3-6]|7\.[0-4])ioncube$/.test(version_extension):
-            case /(5\.6|7\.[0-3])phalcon3|7\.[2-4]phalcon4/.test(version_extension):
-                add_script += await utils.customPackage(ext_name, 'ext', extension, 'darwin');
+            case /(5\.6|7\.[0-3])phalcon3|7\.[2-4]phalcon4|(7\.4|8\.[0-2])phalcon5/.test(version_extension):
+            case /(?<!5\.[3-6])(pdo_)?sqlsrv$/.test(version_extension):
+            case /^(7\.[0-4]|8\.[0-2])zephir_parser(-v?\d+\.\d+\.\d+)?$/.test(version_extension):
+                add_script += await utils.customPackage(ext_name, 'extensions', extension, 'darwin');
                 return;
             case /.+-(stable|beta|alpha|devel|snapshot|rc|preview)/.test(extension):
                 add_script += await utils.joins('\nadd_unstable_extension', ext_name, ext_version, ext_prefix);
                 return;
-            case /.+-\d+\.\d+\.\d+.*/.test(extension):
+            case /.+-\d+(\.\d+\.\d+.*)?/.test(extension):
                 add_script += await utils.joins('\nadd_pecl_extension', ext_name, ext_version, ext_prefix);
                 return;
             case /(5\.[3-6]|7\.0)pcov/.test(version_extension):
                 add_script += await utils.getUnsupportedLog('pcov', version, 'darwin');
                 return;
-            case /(?<!5\.[3-5])(amqp|apcu|expect|grpc|igbinary|imagick|imap|mailparse|memcache|memcached|mongodb|msgpack|protobuf|psr|raphf|rdkafka|redis|ssh2|swoole|xdebug|xdebug2|yaml|zmq)/.test(version_extension):
-            case /(5\.6|7\.[0-4])propro/.test(version_extension):
+            case /(?<!5\.[3-5])(amqp|apcu|expect|gnupg|grpc|igbinary|imagick|imap|mailparse|mcrypt|memcache|memcached|mongodb|msgpack|protobuf|psr|raphf|rdkafka|redis|snmp|ssh2|swoole|uuid|xdebug|xdebug2|yaml|zmq)/.test(version_extension):
+            case /(?<!5\.[3-6])(ds|v8js)/.test(version_extension):
+            case /(5\.6|7\.[0-4])(propro|lua)/.test(version_extension):
             case /(?<!5\.[3-6]|7\.0)pcov/.test(version_extension):
-            case /(?<!5\.[3-6])(vips|xlswriter)/.test(version_extension):
+            case /(?<!5\.[3-6])(ast|vips|xlswriter)/.test(version_extension):
                 add_script += await utils.joins('\nadd_brew_extension', ext_name, ext_prefix);
                 return;
             case /^sqlite$/.test(extension):
@@ -281,12 +299,14 @@ async function addExtensionWindows(extension_csv, version) {
             case /^none$/.test(ext_name):
                 add_script += '\nDisable-AllShared';
                 break;
-            case /^(5\.[3-6]|7\.[0-4]|8\.0)blackfire(-\d+\.\d+\.\d+)?$/.test(version_extension):
+            case /^(5\.[3-6]|7\.[0-4]|8\.[0-2])blackfire(-\d+\.\d+\.\d+)?$/.test(version_extension):
             case /^pdo_oci$|^oci8$|^pdo_firebird$/.test(extension):
             case /^(5\.[3-6]|7\.[0-4])ioncube$/.test(version_extension):
-            case /^7\.[0-3]phalcon3$|^7\.[2-4]phalcon4$/.test(version_extension):
-            case /^(7\.[1-4]|8\.0)(pecl_)?http/.test(version_extension):
-                add_script += await utils.customPackage(ext_name, 'ext', extension, 'win32');
+            case /^7\.[0-3]phalcon3$|^7\.[2-4]phalcon4$|^(7\.4|8\.[0-2])phalcon5$/.test(version_extension):
+            case /^(7\.[1-4]|8\.1)(pecl_)?http/.test(version_extension):
+            case /(?<!5\.[3-6])(pdo_)?sqlsrv$/.test(version_extension):
+            case /^(7\.[0-4]|8\.[0-2])zephir_parser(-v?\d+\.\d+\.\d+)?$/.test(version_extension):
+                add_script += await utils.customPackage(ext_name, 'extensions', extension, 'win32');
                 return;
             case /.+-(stable|beta|alpha|devel|snapshot)/.test(extension):
                 add_script += await utils.joins('\nAdd-Extension', ext_name, ext_version.replace('stable', ''));
@@ -294,12 +314,12 @@ async function addExtensionWindows(extension_csv, version) {
             case /.+-.+\/.+@.+/.test(extension):
                 add_script += await utils.getUnsupportedLog(extension, version, 'win32');
                 break;
-            case /.+-\d+\.\d+\.\d+$/.test(extension):
-                add_script += await utils.joins('\nAdd-Extension', ext_name, 'stable', ext_version);
-                break;
             case /.+-\d+\.\d+\.\d+[a-zA-Z]+\d*/.test(extension):
                 matches = /.+-(\d+\.\d+\.\d+)([a-zA-Z]+)\d*/.exec(version_extension);
                 add_script += await utils.joins('\nAdd-Extension', ext_name, matches[2].replace('preview', 'devel'), matches[1]);
+                break;
+            case /.+-\d+(\.\d+\.\d+.*)?/.test(extension):
+                add_script += await utils.joins('\nAdd-Extension', ext_name, 'stable', ext_version);
                 break;
             case /7\.[2-4]xdebug2/.test(version_extension):
                 add_script += '\nAdd-Extension xdebug stable 2.9.8';
@@ -332,7 +352,9 @@ async function addExtensionLinux(extension_csv, version) {
     let remove_script = '';
     await utils.asyncForEach(extensions, async function (extension) {
         const version_extension = version + extension;
-        const [ext_name, ext_version] = extension.split('-');
+        const [ext_name, ext_version] = extension
+            .split(/-(.+)/)
+            .filter(Boolean);
         const ext_prefix = await utils.getExtensionPrefix(ext_name);
         switch (true) {
             case /^:/.test(ext_name):
@@ -344,18 +366,21 @@ async function addExtensionLinux(extension_csv, version) {
             case /.+-.+\/.+@.+/.test(extension):
                 add_script += await utils.parseExtensionSource(extension, ext_prefix);
                 return;
-            case /^(5\.[3-6]|7\.[0-4]|8\.0)blackfire(-\d+\.\d+\.\d+)?$/.test(version_extension):
+            case /^(7\.4|8\.[0-3])relay(-v?\d+\.\d+\.\d+)?$/.test(version_extension):
+            case /^(5\.[3-6]|7\.[0-4]|8\.[0-2])blackfire(-\d+\.\d+\.\d+)?$/.test(version_extension):
             case /^((5\.[3-6])|(7\.[0-2]))pdo_cubrid$|^((5\.[3-6])|(7\.[0-4]))cubrid$/.test(version_extension):
-            case /^couchbase$|^gearman$|^geos$|^pdo_oci$|^oci8$|^(pecl_)?http|^pdo_firebird$/.test(extension):
-            case /(?<!5\.[3-5])intl-[\d]+\.[\d]+$/.test(version_extension):
+            case /^couchbase|^event|^gearman$|^geos$|^pdo_oci$|^oci8$|^(pecl_)?http|^pdo_firebird$/.test(extension):
+            case /(?<!5\.[3-5])intl-\d+\.\d+$/.test(version_extension):
             case /^(5\.[3-6]|7\.[0-4])ioncube$/.test(version_extension):
-            case /^7\.[0-3]phalcon3$|^7\.[2-4]phalcon4$/.test(version_extension):
-                add_script += await utils.customPackage(ext_name, 'ext', extension, 'linux');
+            case /^7\.[0-3]phalcon3$|^7\.[2-4]phalcon4$|^(7\.4|8\.[0-2])phalcon5$/.test(version_extension):
+            case /(?<!5\.[3-6])(pdo_)?sqlsrv$/.test(version_extension):
+            case /^(7\.[0-4]|8\.[0-2])zephir_parser(-v?\d+\.\d+\.\d+)?$/.test(version_extension):
+                add_script += await utils.customPackage(ext_name, 'extensions', extension, 'linux');
                 return;
             case /.+-(stable|beta|alpha|devel|snapshot|rc|preview)/.test(extension):
                 add_script += await utils.joins('\nadd_unstable_extension', ext_name, ext_version, ext_prefix);
                 return;
-            case /.+-\d+\.\d+\.\d+.*/.test(extension):
+            case /.+-\d+(\.\d+\.\d+.*)?/.test(extension):
                 add_script += await utils.joins('\nadd_pecl_extension', ext_name, ext_version, ext_prefix);
                 return;
             case /(5\.[3-6]|7\.0)pcov/.test(version_extension):
@@ -379,19 +404,19 @@ async function addExtensionLinux(extension_csv, version) {
     return add_script + remove_script;
 }
 exports.addExtensionLinux = addExtensionLinux;
-async function addExtension(extension_csv, version, os_version, no_step = false) {
-    const log = await utils.stepLog('Setup Extensions', os_version);
+async function addExtension(extension_csv, version, os, no_step = false) {
+    const log = await utils.stepLog('Setup Extensions', os);
     let script = '\n';
     switch (no_step) {
         case true:
-            script += log + (await utils.suppressOutput(os_version));
+            script += log + (await utils.suppressOutput(os));
             break;
         case false:
         default:
             script += log;
             break;
     }
-    switch (os_version) {
+    switch (os) {
         case 'win32':
             return script + (await addExtensionWindows(extension_csv, version));
         case 'darwin':
@@ -399,7 +424,7 @@ async function addExtension(extension_csv, version, os_version, no_step = false)
         case 'linux':
             return script + (await addExtensionLinux(extension_csv, version));
         default:
-            return await utils.log('Platform ' + os_version + ' is not supported', os_version, 'error');
+            return await utils.log('Platform ' + os + ' is not supported', os, 'error');
     }
 }
 exports.addExtension = addExtension;
@@ -407,14 +432,18 @@ exports.addExtension = addExtension;
 
 /***/ }),
 
-/***/ 39:
+/***/ 2387:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -432,58 +461,127 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.fetch = void 0;
+const https = __importStar(__nccwpck_require__(5687));
+const url = __importStar(__nccwpck_require__(7310));
+async function fetch(input_url, auth_token, redirect_count = 5) {
+    const fetch_promise = new Promise(resolve => {
+        const url_object = new url.URL(input_url);
+        const headers = {
+            'User-Agent': `Mozilla/5.0 (${process.platform} ${process.arch}) setup-php`
+        };
+        if (auth_token) {
+            headers.authorization = 'Bearer ' + auth_token;
+        }
+        const options = {
+            hostname: url_object.hostname,
+            path: url_object.pathname,
+            headers: headers
+        };
+        const req = https.get(options, (res) => {
+            if (res.statusCode === 200) {
+                let body = '';
+                res.setEncoding('utf8');
+                res.on('data', chunk => (body += chunk));
+                res.on('end', () => resolve({ data: `${body}` }));
+            }
+            else if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+                if (redirect_count > 0 && res.headers.location) {
+                    fetch(res.headers.location, auth_token, redirect_count--).then(resolve);
+                }
+                else {
+                    resolve({ error: `${res.statusCode}: Redirect error` });
+                }
+            }
+            else {
+                resolve({ error: `${res.statusCode}: ${res.statusMessage}` });
+            }
+        });
+        req.end();
+    });
+    return await fetch_promise;
+}
+exports.fetch = fetch;
+//# sourceMappingURL=fetch.js.map
+
+/***/ }),
+
+/***/ 9039:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = exports.getScript = void 0;
-const exec_1 = __nccwpck_require__(514);
-const core = __importStar(__nccwpck_require__(186));
+const path_1 = __importDefault(__nccwpck_require__(1017));
+const fs_1 = __importDefault(__nccwpck_require__(7147));
+const exec_1 = __nccwpck_require__(1514);
+const core = __importStar(__nccwpck_require__(2186));
 const config = __importStar(__nccwpck_require__(88));
-const coverage = __importStar(__nccwpck_require__(730));
-const extensions = __importStar(__nccwpck_require__(390));
-const tools = __importStar(__nccwpck_require__(740));
+const coverage = __importStar(__nccwpck_require__(5730));
+const extensions = __importStar(__nccwpck_require__(3390));
+const tools = __importStar(__nccwpck_require__(7740));
 const utils = __importStar(__nccwpck_require__(918));
-async function getScript(filename, version, os_version) {
-    const url = 'https://setup-php.com/sponsor';
+async function getScript(os) {
+    const url = 'https://setup-php.com/support-ukraine';
+    const filename = os + (await utils.scriptExtension(os));
+    const script_path = path_1.default.join(__dirname, '../src/scripts', filename);
+    const run_path = script_path.replace(os, 'run');
     process.env['fail_fast'] = await utils.getInput('fail-fast', false);
     const extension_csv = await utils.getInput('extensions', false);
     const ini_values_csv = await utils.getInput('ini-values', false);
     const coverage_driver = await utils.getInput('coverage', false);
     const tools_csv = await utils.getInput('tools', false);
-    let script = await utils.readFile(filename, 'src/scripts');
-    script += await tools.addTools(tools_csv, version, os_version);
+    const version = await utils.parseVersion(await utils.readPHPVersion());
+    const ini_file = await utils.parseIniFile(await utils.getInput('ini-file', false));
+    let script = await utils.joins('.', script_path, version, ini_file);
     if (extension_csv) {
-        script += await extensions.addExtension(extension_csv, version, os_version);
+        script += await extensions.addExtension(extension_csv, version, os);
     }
+    script += await tools.addTools(tools_csv, version, os);
     if (coverage_driver) {
-        script += await coverage.addCoverage(coverage_driver, version, os_version);
+        script += await coverage.addCoverage(coverage_driver, version, os);
     }
     if (ini_values_csv) {
-        script += await config.addINIValues(ini_values_csv, os_version);
+        script += await config.addINIValues(ini_values_csv, os);
     }
-    script += '\n' + (await utils.stepLog(`Sponsor setup-php`, os_version));
-    script += '\n' + (await utils.addLog('$tick', 'setup-php', url, os_version));
-    return await utils.writeScript(filename, script);
+    script += '\n' + (await utils.stepLog(`#StandWithUkraine`, os));
+    script += '\n' + (await utils.addLog('$tick', 'read-more', url, os));
+    fs_1.default.writeFileSync(run_path, script, { mode: 0o755 });
+    return run_path;
 }
 exports.getScript = getScript;
 async function run() {
-    try {
-        if ((await utils.readEnv('ImageOS')) == 'ubuntu16') {
-            core.setFailed('setup-php is not supported on Ubuntu 16.04. Please upgrade to Ubuntu 18.04 or Ubuntu 20.04 - https://setup-php.com/i/452');
-            return;
-        }
-        const version = await utils.parseVersion(await utils.getInput('php-version', true));
-        if (version) {
-            const os_version = process.platform;
-            const tool = await utils.scriptTool(os_version);
-            const script = os_version + (await utils.scriptExtension(os_version));
-            const location = await getScript(script, version, os_version);
-            await (0, exec_1.exec)(await utils.joins(tool, location, version, __dirname));
-        }
-        else {
-            core.setFailed('Unable to get the PHP version');
-        }
-    }
-    catch (error) {
-        core.setFailed(error.message);
-    }
+    const os = process.platform;
+    const tool = await utils.scriptTool(os);
+    const run_path = await getScript(os);
+    await (0, exec_1.exec)(tool + run_path);
 }
 exports.run = run;
 (async () => {
@@ -495,14 +593,18 @@ exports.run = run;
 
 /***/ }),
 
-/***/ 740:
+/***/ 5151:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -520,16 +622,84 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.addTools = exports.functionRecord = exports.getData = exports.addWPCLI = exports.addSymfony = exports.addPHPUnitTools = exports.addPhive = exports.addPhing = exports.addPECL = exports.addDevTools = exports.addDeployer = exports.addComposer = exports.addBlackfirePlayer = exports.addPackage = exports.addArchive = exports.getPharUrl = exports.getUrl = exports.filterList = exports.getRelease = exports.getVersion = exports.getLatestVersion = exports.getSemverVersion = void 0;
+exports.search = void 0;
+const cv = __importStar(__nccwpck_require__(4773));
+const fetch = __importStar(__nccwpck_require__(2387));
+async function search(package_name, php_version) {
+    const response = await fetch.fetch(`https://repo.packagist.org/p2/${package_name}.json`);
+    if (response.error || response.data === '[]') {
+        return null;
+    }
+    const data = JSON.parse(response['data']);
+    if (data && data.packages) {
+        const versions = data.packages[package_name];
+        versions.sort((a, b) => cv.compareVersions(b.version, a.version));
+        const result = versions.find((versionData) => {
+            if (versionData?.require?.php) {
+                return versionData?.require?.php
+                    .split('|')
+                    .some(require => require && cv.satisfies(php_version + '.0', require));
+            }
+            return false;
+        });
+        return result ? result.version : null;
+    }
+    return null;
+}
+exports.search = search;
+//# sourceMappingURL=packagist.js.map
+
+/***/ }),
+
+/***/ 7740:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.addTools = exports.functionRecord = exports.getData = exports.addWPCLI = exports.addPHPUnitTools = exports.addPhive = exports.addPhing = exports.addPECL = exports.addDevTools = exports.addDeployer = exports.addComposer = exports.addCastor = exports.addBlackfirePlayer = exports.addPackage = exports.addArchive = exports.getPharUrl = exports.getUrl = exports.filterList = exports.getRelease = exports.getVersion = exports.getLatestVersion = exports.getSemverVersion = void 0;
+const path_1 = __importDefault(__nccwpck_require__(1017));
+const fs_1 = __importDefault(__nccwpck_require__(7147));
+const fetch = __importStar(__nccwpck_require__(2387));
+const packagist = __importStar(__nccwpck_require__(5151));
 const utils = __importStar(__nccwpck_require__(918));
 async function getSemverVersion(data) {
-    var _a;
     const search = data['version_prefix'] + data['version'];
     const url = `https://api.github.com/repos/${data['repository']}/git/matching-refs/tags%2F${search}.`;
-    const token = await utils.readEnv('COMPOSER_TOKEN');
-    const response = await utils.fetch(url, token);
+    let github_token = await utils.readEnv('GITHUB_TOKEN');
+    const composer_token = await utils.readEnv('COMPOSER_TOKEN');
+    if (composer_token && !github_token) {
+        github_token = composer_token;
+    }
+    const response = await fetch.fetch(url, github_token);
     if (response.error || response.data === '[]') {
-        data['error'] = (_a = response.error) !== null && _a !== void 0 ? _a : `No version found with prefix ${search}.`;
+        data['error'] = response.error ?? `No version found with prefix ${search}.`;
         return data['version'];
     }
     else {
@@ -544,13 +714,16 @@ async function getLatestVersion(data) {
     if (!data['version'] && data['fetch_latest'] === 'false') {
         return 'latest';
     }
-    const resp = await utils.fetch(`${data['github']}/${data['repository']}/releases.atom`);
-    const releases = [
-        ...resp['data'].matchAll(/releases\/tag\/([a-zA-Z]*)?(\d+.\d+.\d+)"/g)
-    ].map(match => match[2]);
-    return (releases
-        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-        .pop() || 'latest');
+    const resp = await fetch.fetch(`${data['github']}/${data['repository']}/releases.atom`);
+    if (resp['data']) {
+        const releases = [
+            ...resp['data'].matchAll(/releases\/tag\/([a-zA-Z]*)?(\d+.\d+.\d+)"/g)
+        ].map(match => match[2]);
+        return (releases
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+            .pop() || 'latest');
+    }
+    return 'latest';
 }
 exports.getLatestVersion = getLatestVersion;
 async function getVersion(version, data) {
@@ -641,42 +814,74 @@ async function getPharUrl(data) {
 }
 exports.getPharUrl = getPharUrl;
 async function addArchive(data) {
-    return ((await utils.getCommand(data['os_version'], 'tool')) +
+    return ((await utils.getCommand(data['os'], 'tool')) +
         (await utils.joins(data['url'], data['tool'], data['version_parameter'])));
 }
 exports.addArchive = addArchive;
 async function addPackage(data) {
-    const command = await utils.getCommand(data['os_version'], 'composertool');
+    const command = await utils.getCommand(data['os'], 'composer_tool');
     const parts = data['repository'].split('/');
-    return command + parts[1] + ' ' + data['release'] + ' ' + parts[0] + '/';
+    const args = await utils.joins(parts[1], data['release'], parts[0] + '/', data['scope']);
+    return command + args;
 }
 exports.addPackage = addPackage;
 async function addBlackfirePlayer(data) {
-    if (/5\.[5-6]|7\.0/.test(data['php_version']) &&
-        data['version'] == 'latest') {
-        data['version'] = '1.9.3';
+    switch (data['os']) {
+        case 'win32':
+            return await utils.addLog('$cross', data['tool'], data['tool'] + ' is not a windows tool', 'win32');
+        default:
+            if (data['version'] == 'latest') {
+                if (/5\.[5-6]|7\.0/.test(data['php_version'])) {
+                    data['version'] = '1.9.3';
+                }
+                else if (/7\.[1-4]|8\.0/.test(data['php_version'])) {
+                    data['version'] = '1.22.0';
+                }
+            }
+            data['url'] = await getPharUrl(data);
+            return addArchive(data);
     }
-    data['url'] = await getPharUrl(data);
-    return addArchive(data);
 }
 exports.addBlackfirePlayer = addBlackfirePlayer;
+async function addCastor(data) {
+    data['tool'] = 'castor.' + data['os'].replace('win32', 'windows') + '-amd64';
+    data['url'] = await getUrl(data);
+    data['tool'] = 'castor';
+    data['version_parameter'] = fs_1.default.existsSync('castor.php')
+        ? data['version_parameter']
+        : '';
+    return await addArchive(data);
+}
+exports.addCastor = addCastor;
 async function addComposer(data) {
+    const channel = data['version'].replace('latest', 'stable');
     const github = data['github'];
     const getcomposer = data['domain'];
-    let cache_url = `${github}/shivammathur/composer-cache/releases/latest/download/composer-${data['version'].replace('latest', 'stable')}.phar`;
+    const cds = 'https://dl.cloudsmith.io';
+    const filename = `composer-${data['php_version']}-${channel}.phar`;
+    const releases_url = `${github}/shivammathur/composer-cache/releases/latest/download/${filename}`;
+    const cds_url = `${cds}/public/shivammathur/composer-cache/raw/files/${filename}`;
+    const lts_url = `${getcomposer}/download/latest-2.2.x/composer.phar`;
+    const is_lts = /^5\.[3-6]$|^7\.[0-1]$/.test(data['php_version']);
+    const version_source_url = `${getcomposer}/composer-${channel}.phar`;
+    let cache_url = `${releases_url},${cds_url}`;
     let source_url = `${getcomposer}/composer.phar`;
     switch (true) {
-        case /^snapshot$/.test(data['version']):
+        case /^snapshot$/.test(channel):
+            source_url = is_lts ? lts_url : source_url;
             break;
-        case /^preview$|^[1-2]$/.test(data['version']):
-            source_url = `${getcomposer}/composer-${data['version']}.phar`;
+        case /^preview$|^2$/.test(channel):
+            source_url = is_lts ? lts_url : version_source_url;
+            break;
+        case /^1$/.test(channel):
+            source_url = version_source_url;
             break;
         case /^\d+\.\d+\.\d+[\w-]*$/.test(data['version']):
             cache_url = `${github}/${data['repository']}/releases/download/${data['version']}/composer.phar`;
-            source_url = `${getcomposer}/composer-${data['version']}.phar`;
+            source_url = version_source_url;
             break;
         default:
-            source_url = `${getcomposer}/composer-stable.phar`;
+            source_url = is_lts ? lts_url : version_source_url;
     }
     const use_cache = (await utils.readEnv('NO_TOOLS_CACHE')) !== 'true';
     data['url'] = use_cache ? `${cache_url},${source_url}` : source_url;
@@ -689,91 +894,81 @@ async function addDeployer(data) {
         data['url'] = data['domain'] + '/deployer.phar';
     }
     else {
-        data['url'] =
-            data['domain'] + '/releases/v' + data['version'] + '/deployer.phar';
+        const manifest = await fetch.fetch('https://deployer.org/manifest.json');
+        const version_data = JSON.parse(manifest.data);
+        const version_key = Object.keys(version_data).find((key) => {
+            return version_data[key]['version'] === data['version'];
+        });
+        if (version_key) {
+            data['url'] = version_data[version_key]['url'];
+        }
+        else {
+            return await utils.addLog('$cross', 'deployer', 'Version missing in deployer manifest', data['os']);
+        }
     }
     return await addArchive(data);
 }
 exports.addDeployer = addDeployer;
 async function addDevTools(data) {
-    switch (data['os_version']) {
+    switch (data['os']) {
         case 'linux':
         case 'darwin':
             return 'add_devtools ' + data['tool'];
         case 'win32':
             return await utils.addLog('$tick', data['tool'], data['tool'] + ' is not a windows tool', 'win32');
         default:
-            return await utils.log('Platform ' + data['os_version'] + ' is not supported', data['os_version'], 'error');
+            return await utils.log('Platform ' + data['os'] + ' is not supported', data['os'], 'error');
     }
 }
 exports.addDevTools = addDevTools;
 async function addPECL(data) {
-    return await utils.getCommand(data['os_version'], 'pecl');
+    return await utils.getCommand(data['os'], 'pecl');
 }
 exports.addPECL = addPECL;
 async function addPhing(data) {
     data['url'] =
         data['domain'] + '/get/phing-' + data['version'] + data['extension'];
+    if (data['version'] != 'latest') {
+        [data['prefix'], data['verb']] = ['releases', 'download'];
+        data['domain'] = data['github'];
+        data['extension'] = '-' + data['version'] + data['extension'];
+        data['url'] += ',' + (await getUrl(data));
+    }
     return await addArchive(data);
 }
 exports.addPhing = addPhing;
 async function addPhive(data) {
     switch (true) {
         case /5\.[3-5]/.test(data['php_version']):
-            return await utils.addLog('$cross', 'phive', 'Phive is not supported on PHP ' + data['php_version'], data['os_version']);
+            return await utils.addLog('$cross', 'phive', 'Phive is not supported on PHP ' + data['php_version'], data['os']);
         case /5\.6|7\.0/.test(data['php_version']):
-            data['version'] = data['version'].replace('latest', '0.12.1');
+            data['version'] = '0.12.1';
             break;
         case /7\.1/.test(data['php_version']):
-            data['version'] = data['version'].replace('latest', '0.13.5');
+            data['version'] = '0.13.5';
             break;
         case /7\.2/.test(data['php_version']):
-            data['version'] = data['version'].replace('latest', '0.14.5');
+            data['version'] = '0.14.5';
+            break;
+        case /^latest$/.test(data['version']):
+            data['version'] = await getLatestVersion(data);
             break;
     }
-    if (data['version'] === 'latest') {
-        data['domain'] = data['domain'] + '/releases';
-    }
-    else {
-        data['domain'] = [
-            data['github'],
-            data['repository'],
-            'releases/download',
-            data['version']
-        ].join('/');
-    }
-    data['url'] = await getPharUrl(data);
+    data['extension'] = '-' + data['version'] + data['extension'];
+    data['url'] = await getUrl(data);
     return await addArchive(data);
 }
 exports.addPhive = addPhive;
 async function addPHPUnitTools(data) {
+    if (data['version'] === 'latest') {
+        data['version'] =
+            (await packagist.search(data['packagist'], data['php_version'])) ??
+                'latest';
+    }
     data['url'] = await getPharUrl(data);
     return await addArchive(data);
 }
 exports.addPHPUnitTools = addPHPUnitTools;
-async function addSymfony(data) {
-    let filename;
-    switch (data['os_version']) {
-        case 'linux':
-        case 'darwin':
-            filename = 'symfony_' + data['os_version'] + '_amd64';
-            break;
-        case 'win32':
-            filename = 'symfony_windows_amd64.exe';
-            break;
-        default:
-            return await utils.log('Platform ' + data['os_version'] + ' is not supported', data['os_version'], 'error');
-    }
-    if (data['version'] === 'latest') {
-        data['uri'] = ['releases/latest/download', filename].join('/');
-    }
-    else {
-        data['uri'] = ['releases/download', 'v' + data['version'], filename].join('/');
-    }
-    data['url'] = [data['domain'], data['repository'], data['uri']].join('/');
-    return await addArchive(data);
-}
-exports.addSymfony = addSymfony;
 async function addWPCLI(data) {
     if (data['version'] === 'latest') {
         data['uri'] = 'wp-cli/builds/blob/gh-pages/phar/wp-cli.phar?raw=true';
@@ -786,9 +981,9 @@ async function addWPCLI(data) {
     return await addArchive(data);
 }
 exports.addWPCLI = addWPCLI;
-async function getData(release, php_version, os_version) {
-    var _a, _b, _c, _d;
-    const json_file = await utils.readFile('tools.json', 'src/configs');
+async function getData(release, php_version, os) {
+    const json_file_path = path_1.default.join(__dirname, '../src/configs/tools.json');
+    const json_file = fs_1.default.readFileSync(json_file_path, 'utf8');
     const json_objects = JSON.parse(json_file);
     release = release.replace(/\s+/g, '');
     const parts = release.split(':');
@@ -817,15 +1012,17 @@ async function getData(release, php_version, os_version) {
         }
     }
     data['github'] = 'https://github.com';
-    (_a = data['domain']) !== null && _a !== void 0 ? _a : (data['domain'] = data['github']);
-    (_b = data['extension']) !== null && _b !== void 0 ? _b : (data['extension'] = '.phar');
-    data['os_version'] = os_version;
+    data['domain'] ??= data['github'];
+    data['extension'] ??= '.phar';
+    data['os'] = os;
     data['php_version'] = php_version;
+    data['packagist'] ??= data['repository'];
     data['prefix'] = data['github'] === data['domain'] ? 'releases' : '';
     data['verb'] = data['github'] === data['domain'] ? 'download' : '';
-    (_c = data['fetch_latest']) !== null && _c !== void 0 ? _c : (data['fetch_latest'] = 'false');
+    data['fetch_latest'] ??= 'false';
+    data['scope'] ??= 'global';
     data['version_parameter'] = JSON.stringify(data['version_parameter']) || '';
-    (_d = data['version_prefix']) !== null && _d !== void 0 ? _d : (data['version_prefix'] = '');
+    data['version_prefix'] ??= '';
     data['release'] = await getRelease(release, data);
     data['version'] = version
         ? await getVersion(version, data)
@@ -834,6 +1031,7 @@ async function getData(release, php_version, os_version) {
 }
 exports.getData = getData;
 exports.functionRecord = {
+    castor: addCastor,
     composer: addComposer,
     deployer: addDeployer,
     dev_tools: addDevTools,
@@ -843,24 +1041,23 @@ exports.functionRecord = {
     phing: addPhing,
     phpunit: addPHPUnitTools,
     phpcpd: addPHPUnitTools,
-    symfony: addSymfony,
     wp_cli: addWPCLI
 };
-async function addTools(tools_csv, php_version, os_version) {
+async function addTools(tools_csv, php_version, os) {
     let script = '\n';
     if (tools_csv === 'none') {
         return '';
     }
     else {
-        script += await utils.stepLog('Setup Tools', os_version);
+        script += await utils.stepLog('Setup Tools', os);
     }
     const tools_list = await filterList(await utils.CSVArray(tools_csv));
     await utils.asyncForEach(tools_list, async function (release) {
-        const data = await getData(release, php_version, os_version);
+        const data = await getData(release, php_version, os);
         script += '\n';
         switch (true) {
             case data['error'] !== undefined:
-                script += await utils.addLog('$cross', data['tool'], data['error'], data['os_version']);
+                script += await utils.addLog('$cross', data['tool'], data['error'], data['os']);
                 break;
             case 'phar' === data['type']:
                 data['url'] = await getUrl(data);
@@ -870,7 +1067,7 @@ async function addTools(tools_csv, php_version, os_version) {
                 script += await addPackage(data);
                 break;
             case 'custom-package' === data['type']:
-                script += await utils.customPackage(data['tool'].split('-')[0], 'tools', data['version'], data['os_version']);
+                script += await utils.customPackage(data['tool'].split('-')[0], 'tools', data['version'], data['os']);
                 break;
             case 'custom-function' === data['type']:
                 script += await exports.functionRecord[data['function']](data);
@@ -878,7 +1075,7 @@ async function addTools(tools_csv, php_version, os_version) {
             case /^none$/.test(data['tool']):
                 break;
             default:
-                script += await utils.addLog('$cross', data['tool'], 'Tool ' + data['tool'] + ' is not supported', data['os_version']);
+                script += await utils.addLog('$cross', data['tool'], 'Tool ' + data['tool'] + ' is not supported', data['os']);
                 break;
         }
     });
@@ -896,7 +1093,11 @@ exports.addTools = addTools;
 
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
-    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
 }) : (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
@@ -913,13 +1114,15 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.parseExtensionSource = exports.customPackage = exports.scriptTool = exports.scriptExtension = exports.joins = exports.getCommand = exports.getUnsupportedLog = exports.suppressOutput = exports.getExtensionPrefix = exports.CSVArray = exports.extensionArray = exports.writeScript = exports.readFile = exports.addLog = exports.stepLog = exports.log = exports.color = exports.asyncForEach = exports.parseVersion = exports.getManifestURL = exports.fetch = exports.getInput = exports.readEnv = void 0;
-const fs = __importStar(__nccwpck_require__(147));
-const https = __importStar(__nccwpck_require__(687));
-const path = __importStar(__nccwpck_require__(17));
-const url = __importStar(__nccwpck_require__(310));
-const core = __importStar(__nccwpck_require__(186));
+exports.setVariable = exports.readPHPVersion = exports.parseExtensionSource = exports.customPackage = exports.scriptTool = exports.scriptExtension = exports.joins = exports.getCommand = exports.getUnsupportedLog = exports.suppressOutput = exports.getExtensionPrefix = exports.CSVArray = exports.extensionArray = exports.addLog = exports.stepLog = exports.log = exports.color = exports.asyncForEach = exports.parseIniFile = exports.parseVersion = exports.getManifestURL = exports.getInput = exports.readEnv = void 0;
+const fs_1 = __importDefault(__nccwpck_require__(7147));
+const path = __importStar(__nccwpck_require__(1017));
+const core = __importStar(__nccwpck_require__(2186));
+const fetch = __importStar(__nccwpck_require__(2387));
 async function readEnv(property) {
     const property_lc = property.toLowerCase();
     const property_uc = property.toUpperCase();
@@ -946,45 +1149,14 @@ async function getInput(name, mandatory) {
     }
 }
 exports.getInput = getInput;
-async function fetch(input_url, auth_token) {
-    const fetch_promise = new Promise(resolve => {
-        const url_object = new url.URL(input_url);
-        const headers = {
-            'User-Agent': `Mozilla/5.0 (${process.platform} ${process.arch}) setup-php`
-        };
-        if (auth_token) {
-            headers.authorization = 'Bearer ' + auth_token;
-        }
-        const options = {
-            hostname: url_object.hostname,
-            path: url_object.pathname,
-            headers: headers
-        };
-        const req = https.get(options, (res) => {
-            if (res.statusCode != 200) {
-                resolve({ error: `${res.statusCode}: ${res.statusMessage}` });
-            }
-            else {
-                let body = '';
-                res.setEncoding('utf8');
-                res.on('data', chunk => (body += chunk));
-                res.on('end', () => resolve({ data: `${body}` }));
-            }
-        });
-        req.end();
-    });
-    return await fetch_promise;
-}
-exports.fetch = fetch;
 async function getManifestURL() {
     return 'https://raw.githubusercontent.com/shivammathur/setup-php/develop/src/configs/php-versions.json';
 }
 exports.getManifestURL = getManifestURL;
 async function parseVersion(version) {
-    const manifest = await getManifestURL();
     switch (true) {
         case /^(latest|nightly|\d+\.x)$/.test(version):
-            return JSON.parse((await fetch(manifest))['data'])[version];
+            return JSON.parse((await fetch.fetch(await getManifestURL()))['data'])[version];
         default:
             switch (true) {
                 case version.length > 1:
@@ -995,6 +1167,17 @@ async function parseVersion(version) {
     }
 }
 exports.parseVersion = parseVersion;
+async function parseIniFile(ini_file) {
+    switch (true) {
+        case /^(production|development|none)$/.test(ini_file):
+            return ini_file;
+        case /php\.ini-(production|development)$/.test(ini_file):
+            return ini_file.split('-')[1];
+        default:
+            return 'production';
+    }
+}
+exports.parseIniFile = parseIniFile;
 async function asyncForEach(array, callback) {
     for (let index = 0; index < array.length; index++) {
         await callback(array[index], index, array);
@@ -1013,8 +1196,8 @@ async function color(type) {
     }
 }
 exports.color = color;
-async function log(message, os_version, log_type) {
-    switch (os_version) {
+async function log(message, os, log_type) {
+    switch (os) {
         case 'win32':
             return ('printf "\\033[' +
                 (await color(log_type)) +
@@ -1028,41 +1211,30 @@ async function log(message, os_version, log_type) {
     }
 }
 exports.log = log;
-async function stepLog(message, os_version) {
-    switch (os_version) {
+async function stepLog(message, os) {
+    switch (os) {
         case 'win32':
             return 'Step-Log "' + message + '"';
         case 'linux':
         case 'darwin':
             return 'step_log "' + message + '"';
         default:
-            return await log('Platform ' + os_version + ' is not supported', os_version, 'error');
+            return await log('Platform ' + os + ' is not supported', os, 'error');
     }
 }
 exports.stepLog = stepLog;
-async function addLog(mark, subject, message, os_version) {
-    switch (os_version) {
+async function addLog(mark, subject, message, os) {
+    switch (os) {
         case 'win32':
             return 'Add-Log "' + mark + '" "' + subject + '" "' + message + '"';
         case 'linux':
         case 'darwin':
             return 'add_log "' + mark + '" "' + subject + '" "' + message + '"';
         default:
-            return await log('Platform ' + os_version + ' is not supported', os_version, 'error');
+            return await log('Platform ' + os + ' is not supported', os, 'error');
     }
 }
 exports.addLog = addLog;
-async function readFile(filename, directory) {
-    return fs.readFileSync(path.join(__dirname, '../' + directory, filename), 'utf8');
-}
-exports.readFile = readFile;
-async function writeScript(filename, script) {
-    const runner_dir = await getInput('RUNNER_TOOL_CACHE', false);
-    const script_path = path.join(runner_dir, filename);
-    fs.writeFileSync(script_path, script, { mode: 0o755 });
-    return script_path;
-}
-exports.writeScript = writeScript;
 async function extensionArray(extension_csv) {
     switch (extension_csv) {
         case '':
@@ -1080,7 +1252,7 @@ async function extensionArray(extension_csv) {
                     return extension
                         .trim()
                         .toLowerCase()
-                        .replace(/^(:)?(php[-_]|none|zend )/, '$1');
+                        .replace(/^(:)?(php[-_]|none|zend )|(-[^-]*)-/, '$1$3');
                 })
             ].filter(Boolean);
     }
@@ -1098,7 +1270,9 @@ async function CSVArray(values_csv) {
                 return value
                     .trim()
                     .replace(/^["']|["']$|(?<==)["']/g, '')
-                    .replace(/=(((?!E_).)*[?{}|&~![()^]+((?!E_).)+)/, "='$1'");
+                    .replace(/=(((?!E_).)*[?{}|&~![()^]+((?!E_).)+)/, "='$1'")
+                    .replace(/=(.*?)(=.*)/, "='$1$2'")
+                    .replace(/:\s*["'](.*?)/g, ':$1');
             })
                 .filter(Boolean);
     }
@@ -1113,33 +1287,38 @@ async function getExtensionPrefix(extension) {
     }
 }
 exports.getExtensionPrefix = getExtensionPrefix;
-async function suppressOutput(os_version) {
-    switch (os_version) {
+async function suppressOutput(os) {
+    switch (os) {
         case 'win32':
             return ' >$null 2>&1';
         case 'linux':
         case 'darwin':
             return ' >/dev/null 2>&1';
         default:
-            return await log('Platform ' + os_version + ' is not supported', os_version, 'error');
+            return await log('Platform ' + os + ' is not supported', os, 'error');
     }
 }
 exports.suppressOutput = suppressOutput;
-async function getUnsupportedLog(extension, version, os_version) {
+async function getUnsupportedLog(extension, version, os) {
     return ('\n' +
-        (await addLog('$cross', extension, [extension, 'is not supported on PHP', version].join(' '), os_version)) +
+        (await addLog('$cross', extension, [extension, 'is not supported on PHP', version].join(' '), os)) +
         '\n');
 }
 exports.getUnsupportedLog = getUnsupportedLog;
-async function getCommand(os_version, suffix) {
-    switch (os_version) {
+async function getCommand(os, suffix) {
+    switch (os) {
         case 'linux':
         case 'darwin':
             return 'add_' + suffix + ' ';
         case 'win32':
-            return 'Add-' + suffix.charAt(0).toUpperCase() + suffix.slice(1) + ' ';
+            return ('Add-' +
+                suffix
+                    .split('_')
+                    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join('') +
+                ' ');
         default:
-            return await log('Platform ' + os_version + ' is not supported', os_version, 'error');
+            return await log('Platform ' + os + ' is not supported', os, 'error');
     }
 }
 exports.getCommand = getCommand;
@@ -1147,50 +1326,93 @@ async function joins(...str) {
     return [...str].join(' ');
 }
 exports.joins = joins;
-async function scriptExtension(os_version) {
-    switch (os_version) {
+async function scriptExtension(os) {
+    switch (os) {
         case 'win32':
             return '.ps1';
         case 'linux':
         case 'darwin':
             return '.sh';
         default:
-            return await log('Platform ' + os_version + ' is not supported', os_version, 'error');
+            return await log('Platform ' + os + ' is not supported', os, 'error');
     }
 }
 exports.scriptExtension = scriptExtension;
-async function scriptTool(os_version) {
-    switch (os_version) {
+async function scriptTool(os) {
+    switch (os) {
         case 'win32':
-            return 'pwsh';
+            return 'pwsh ';
         case 'linux':
         case 'darwin':
-            return 'bash';
+            return 'bash ';
         default:
-            return await log('Platform ' + os_version + ' is not supported', os_version, 'error');
+            return await log('Platform ' + os + ' is not supported', os, 'error');
     }
 }
 exports.scriptTool = scriptTool;
-async function customPackage(pkg, type, version, os_version) {
+async function customPackage(pkg, type, version, os) {
     const pkg_name = pkg.replace(/\d+|(pdo|pecl)[_-]/, '');
-    const script_extension = await scriptExtension(os_version);
+    const script_extension = await scriptExtension(os);
     const script = path.join(__dirname, '../src/scripts/' + type + '/' + pkg_name + script_extension);
-    const command = await getCommand(os_version, pkg_name);
+    const command = await getCommand(os, pkg_name);
     return '\n. ' + script + '\n' + command + version;
 }
 exports.customPackage = customPackage;
 async function parseExtensionSource(extension, prefix) {
-    const regex = /(\w+)-(.+:\/\/.+(?:[.:].+)+\/)?([\w.-]+)\/([\w.-]+)@(.+)/;
+    const regex = /(\w+)-(\w+:\/\/.{1,253}(?:[.:][^:/\s]{2,63})+\/)?([\w.-]+)\/([\w.-]+)@(.+)/;
     const matches = regex.exec(extension);
     matches[2] = matches[2] ? matches[2].slice(0, -1) : 'https://github.com';
     return await joins('\nadd_extension_from_source', ...matches.splice(1, matches.length), prefix);
 }
 exports.parseExtensionSource = parseExtensionSource;
+async function readPHPVersion() {
+    const version = await getInput('php-version', false);
+    if (version) {
+        return version;
+    }
+    const versionFile = (await getInput('php-version-file', false)) || '.php-version';
+    if (fs_1.default.existsSync(versionFile)) {
+        return fs_1.default.readFileSync(versionFile, 'utf8').replace(/[\r\n]/g, '');
+    }
+    else if (versionFile !== '.php-version') {
+        throw new Error(`Could not find '${versionFile}' file.`);
+    }
+    const composerLock = 'composer.lock';
+    if (fs_1.default.existsSync(composerLock)) {
+        const lockFileContents = JSON.parse(fs_1.default.readFileSync(composerLock, 'utf8'));
+        if (lockFileContents['platform-overrides'] &&
+            lockFileContents['platform-overrides']['php']) {
+            return lockFileContents['platform-overrides']['php'];
+        }
+    }
+    const composerJson = 'composer.json';
+    if (fs_1.default.existsSync(composerJson)) {
+        const composerFileContents = JSON.parse(fs_1.default.readFileSync(composerJson, 'utf8'));
+        if (composerFileContents['config'] &&
+            composerFileContents['config']['platform'] &&
+            composerFileContents['config']['platform']['php']) {
+            return composerFileContents['config']['platform']['php'];
+        }
+    }
+    return 'latest';
+}
+exports.readPHPVersion = readPHPVersion;
+async function setVariable(variable, command, os) {
+    switch (os) {
+        case 'win32':
+            return '\n$' + variable + ' = ' + command + '\n';
+        case 'linux':
+        case 'darwin':
+        default:
+            return '\n' + variable + '="$(' + command + ')"\n';
+    }
+}
+exports.setVariable = setVariable;
 //# sourceMappingURL=utils.js.map
 
 /***/ }),
 
-/***/ 241:
+/***/ 5241:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1216,8 +1438,8 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.issue = exports.issueCommand = void 0;
-const os = __importStar(__nccwpck_require__(37));
-const utils_1 = __nccwpck_require__(278);
+const os = __importStar(__nccwpck_require__(2037));
+const utils_1 = __nccwpck_require__(5278);
 /**
  * Commands
  *
@@ -1289,7 +1511,7 @@ function escapeProperty(s) {
 
 /***/ }),
 
-/***/ 186:
+/***/ 2186:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1324,12 +1546,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getIDToken = exports.getState = exports.saveState = exports.group = exports.endGroup = exports.startGroup = exports.info = exports.notice = exports.warning = exports.error = exports.debug = exports.isDebug = exports.setFailed = exports.setCommandEcho = exports.setOutput = exports.getBooleanInput = exports.getMultilineInput = exports.getInput = exports.addPath = exports.setSecret = exports.exportVariable = exports.ExitCode = void 0;
-const command_1 = __nccwpck_require__(241);
+const command_1 = __nccwpck_require__(5241);
 const file_command_1 = __nccwpck_require__(717);
-const utils_1 = __nccwpck_require__(278);
-const os = __importStar(__nccwpck_require__(37));
-const path = __importStar(__nccwpck_require__(17));
-const oidc_utils_1 = __nccwpck_require__(41);
+const utils_1 = __nccwpck_require__(5278);
+const os = __importStar(__nccwpck_require__(2037));
+const path = __importStar(__nccwpck_require__(1017));
+const oidc_utils_1 = __nccwpck_require__(8041);
 /**
  * The code to exit an action
  */
@@ -1358,13 +1580,9 @@ function exportVariable(name, val) {
     process.env[name] = convertedVal;
     const filePath = process.env['GITHUB_ENV'] || '';
     if (filePath) {
-        const delimiter = '_GitHubActionsFileCommandDelimeter_';
-        const commandValue = `${name}<<${delimiter}${os.EOL}${convertedVal}${os.EOL}${delimiter}`;
-        file_command_1.issueCommand('ENV', commandValue);
+        return file_command_1.issueFileCommand('ENV', file_command_1.prepareKeyValueMessage(name, val));
     }
-    else {
-        command_1.issueCommand('set-env', { name }, convertedVal);
-    }
+    command_1.issueCommand('set-env', { name }, convertedVal);
 }
 exports.exportVariable = exportVariable;
 /**
@@ -1382,7 +1600,7 @@ exports.setSecret = setSecret;
 function addPath(inputPath) {
     const filePath = process.env['GITHUB_PATH'] || '';
     if (filePath) {
-        file_command_1.issueCommand('PATH', inputPath);
+        file_command_1.issueFileCommand('PATH', inputPath);
     }
     else {
         command_1.issueCommand('add-path', {}, inputPath);
@@ -1422,7 +1640,10 @@ function getMultilineInput(name, options) {
     const inputs = getInput(name, options)
         .split('\n')
         .filter(x => x !== '');
-    return inputs;
+    if (options && options.trimWhitespace === false) {
+        return inputs;
+    }
+    return inputs.map(input => input.trim());
 }
 exports.getMultilineInput = getMultilineInput;
 /**
@@ -1455,8 +1676,12 @@ exports.getBooleanInput = getBooleanInput;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function setOutput(name, value) {
+    const filePath = process.env['GITHUB_OUTPUT'] || '';
+    if (filePath) {
+        return file_command_1.issueFileCommand('OUTPUT', file_command_1.prepareKeyValueMessage(name, value));
+    }
     process.stdout.write(os.EOL);
-    command_1.issueCommand('set-output', { name }, value);
+    command_1.issueCommand('set-output', { name }, utils_1.toCommandValue(value));
 }
 exports.setOutput = setOutput;
 /**
@@ -1585,7 +1810,11 @@ exports.group = group;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function saveState(name, value) {
-    command_1.issueCommand('save-state', { name }, value);
+    const filePath = process.env['GITHUB_STATE'] || '';
+    if (filePath) {
+        return file_command_1.issueFileCommand('STATE', file_command_1.prepareKeyValueMessage(name, value));
+    }
+    command_1.issueCommand('save-state', { name }, utils_1.toCommandValue(value));
 }
 exports.saveState = saveState;
 /**
@@ -1604,6 +1833,23 @@ function getIDToken(aud) {
     });
 }
 exports.getIDToken = getIDToken;
+/**
+ * Summary exports
+ */
+var summary_1 = __nccwpck_require__(1327);
+Object.defineProperty(exports, "summary", ({ enumerable: true, get: function () { return summary_1.summary; } }));
+/**
+ * @deprecated use core.summary
+ */
+var summary_2 = __nccwpck_require__(1327);
+Object.defineProperty(exports, "markdownSummary", ({ enumerable: true, get: function () { return summary_2.markdownSummary; } }));
+/**
+ * Path exports
+ */
+var path_utils_1 = __nccwpck_require__(2981);
+Object.defineProperty(exports, "toPosixPath", ({ enumerable: true, get: function () { return path_utils_1.toPosixPath; } }));
+Object.defineProperty(exports, "toWin32Path", ({ enumerable: true, get: function () { return path_utils_1.toWin32Path; } }));
+Object.defineProperty(exports, "toPlatformPath", ({ enumerable: true, get: function () { return path_utils_1.toPlatformPath; } }));
 //# sourceMappingURL=core.js.map
 
 /***/ }),
@@ -1634,13 +1880,14 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.issueCommand = void 0;
+exports.prepareKeyValueMessage = exports.issueFileCommand = void 0;
 // We use any as a valid input type
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const fs = __importStar(__nccwpck_require__(147));
-const os = __importStar(__nccwpck_require__(37));
-const utils_1 = __nccwpck_require__(278);
-function issueCommand(command, message) {
+const fs = __importStar(__nccwpck_require__(7147));
+const os = __importStar(__nccwpck_require__(2037));
+const uuid_1 = __nccwpck_require__(5840);
+const utils_1 = __nccwpck_require__(5278);
+function issueFileCommand(command, message) {
     const filePath = process.env[`GITHUB_${command}`];
     if (!filePath) {
         throw new Error(`Unable to find environment variable for file command ${command}`);
@@ -1652,12 +1899,27 @@ function issueCommand(command, message) {
         encoding: 'utf8'
     });
 }
-exports.issueCommand = issueCommand;
+exports.issueFileCommand = issueFileCommand;
+function prepareKeyValueMessage(key, value) {
+    const delimiter = `ghadelimiter_${uuid_1.v4()}`;
+    const convertedValue = utils_1.toCommandValue(value);
+    // These should realistically never happen, but just in case someone finds a
+    // way to exploit uuid generation let's not allow keys or values that contain
+    // the delimiter.
+    if (key.includes(delimiter)) {
+        throw new Error(`Unexpected input: name should not contain the delimiter "${delimiter}"`);
+    }
+    if (convertedValue.includes(delimiter)) {
+        throw new Error(`Unexpected input: value should not contain the delimiter "${delimiter}"`);
+    }
+    return `${key}<<${delimiter}${os.EOL}${convertedValue}${os.EOL}${delimiter}`;
+}
+exports.prepareKeyValueMessage = prepareKeyValueMessage;
 //# sourceMappingURL=file-command.js.map
 
 /***/ }),
 
-/***/ 41:
+/***/ 8041:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1673,9 +1935,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.OidcClient = void 0;
-const http_client_1 = __nccwpck_require__(925);
-const auth_1 = __nccwpck_require__(702);
-const core_1 = __nccwpck_require__(186);
+const http_client_1 = __nccwpck_require__(6255);
+const auth_1 = __nccwpck_require__(5526);
+const core_1 = __nccwpck_require__(2186);
 class OidcClient {
     static createHttpClient(allowRetry = true, maxRetry = 10) {
         const requestOptions = {
@@ -1741,7 +2003,362 @@ exports.OidcClient = OidcClient;
 
 /***/ }),
 
-/***/ 278:
+/***/ 2981:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.toPlatformPath = exports.toWin32Path = exports.toPosixPath = void 0;
+const path = __importStar(__nccwpck_require__(1017));
+/**
+ * toPosixPath converts the given path to the posix form. On Windows, \\ will be
+ * replaced with /.
+ *
+ * @param pth. Path to transform.
+ * @return string Posix path.
+ */
+function toPosixPath(pth) {
+    return pth.replace(/[\\]/g, '/');
+}
+exports.toPosixPath = toPosixPath;
+/**
+ * toWin32Path converts the given path to the win32 form. On Linux, / will be
+ * replaced with \\.
+ *
+ * @param pth. Path to transform.
+ * @return string Win32 path.
+ */
+function toWin32Path(pth) {
+    return pth.replace(/[/]/g, '\\');
+}
+exports.toWin32Path = toWin32Path;
+/**
+ * toPlatformPath converts the given path to a platform-specific path. It does
+ * this by replacing instances of / and \ with the platform-specific path
+ * separator.
+ *
+ * @param pth The path to platformize.
+ * @return string The platform-specific path.
+ */
+function toPlatformPath(pth) {
+    return pth.replace(/[/\\]/g, path.sep);
+}
+exports.toPlatformPath = toPlatformPath;
+//# sourceMappingURL=path-utils.js.map
+
+/***/ }),
+
+/***/ 1327:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.summary = exports.markdownSummary = exports.SUMMARY_DOCS_URL = exports.SUMMARY_ENV_VAR = void 0;
+const os_1 = __nccwpck_require__(2037);
+const fs_1 = __nccwpck_require__(7147);
+const { access, appendFile, writeFile } = fs_1.promises;
+exports.SUMMARY_ENV_VAR = 'GITHUB_STEP_SUMMARY';
+exports.SUMMARY_DOCS_URL = 'https://docs.github.com/actions/using-workflows/workflow-commands-for-github-actions#adding-a-job-summary';
+class Summary {
+    constructor() {
+        this._buffer = '';
+    }
+    /**
+     * Finds the summary file path from the environment, rejects if env var is not found or file does not exist
+     * Also checks r/w permissions.
+     *
+     * @returns step summary file path
+     */
+    filePath() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this._filePath) {
+                return this._filePath;
+            }
+            const pathFromEnv = process.env[exports.SUMMARY_ENV_VAR];
+            if (!pathFromEnv) {
+                throw new Error(`Unable to find environment variable for $${exports.SUMMARY_ENV_VAR}. Check if your runtime environment supports job summaries.`);
+            }
+            try {
+                yield access(pathFromEnv, fs_1.constants.R_OK | fs_1.constants.W_OK);
+            }
+            catch (_a) {
+                throw new Error(`Unable to access summary file: '${pathFromEnv}'. Check if the file has correct read/write permissions.`);
+            }
+            this._filePath = pathFromEnv;
+            return this._filePath;
+        });
+    }
+    /**
+     * Wraps content in an HTML tag, adding any HTML attributes
+     *
+     * @param {string} tag HTML tag to wrap
+     * @param {string | null} content content within the tag
+     * @param {[attribute: string]: string} attrs key-value list of HTML attributes to add
+     *
+     * @returns {string} content wrapped in HTML element
+     */
+    wrap(tag, content, attrs = {}) {
+        const htmlAttrs = Object.entries(attrs)
+            .map(([key, value]) => ` ${key}="${value}"`)
+            .join('');
+        if (!content) {
+            return `<${tag}${htmlAttrs}>`;
+        }
+        return `<${tag}${htmlAttrs}>${content}</${tag}>`;
+    }
+    /**
+     * Writes text in the buffer to the summary buffer file and empties buffer. Will append by default.
+     *
+     * @param {SummaryWriteOptions} [options] (optional) options for write operation
+     *
+     * @returns {Promise<Summary>} summary instance
+     */
+    write(options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const overwrite = !!(options === null || options === void 0 ? void 0 : options.overwrite);
+            const filePath = yield this.filePath();
+            const writeFunc = overwrite ? writeFile : appendFile;
+            yield writeFunc(filePath, this._buffer, { encoding: 'utf8' });
+            return this.emptyBuffer();
+        });
+    }
+    /**
+     * Clears the summary buffer and wipes the summary file
+     *
+     * @returns {Summary} summary instance
+     */
+    clear() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.emptyBuffer().write({ overwrite: true });
+        });
+    }
+    /**
+     * Returns the current summary buffer as a string
+     *
+     * @returns {string} string of summary buffer
+     */
+    stringify() {
+        return this._buffer;
+    }
+    /**
+     * If the summary buffer is empty
+     *
+     * @returns {boolen} true if the buffer is empty
+     */
+    isEmptyBuffer() {
+        return this._buffer.length === 0;
+    }
+    /**
+     * Resets the summary buffer without writing to summary file
+     *
+     * @returns {Summary} summary instance
+     */
+    emptyBuffer() {
+        this._buffer = '';
+        return this;
+    }
+    /**
+     * Adds raw text to the summary buffer
+     *
+     * @param {string} text content to add
+     * @param {boolean} [addEOL=false] (optional) append an EOL to the raw text (default: false)
+     *
+     * @returns {Summary} summary instance
+     */
+    addRaw(text, addEOL = false) {
+        this._buffer += text;
+        return addEOL ? this.addEOL() : this;
+    }
+    /**
+     * Adds the operating system-specific end-of-line marker to the buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addEOL() {
+        return this.addRaw(os_1.EOL);
+    }
+    /**
+     * Adds an HTML codeblock to the summary buffer
+     *
+     * @param {string} code content to render within fenced code block
+     * @param {string} lang (optional) language to syntax highlight code
+     *
+     * @returns {Summary} summary instance
+     */
+    addCodeBlock(code, lang) {
+        const attrs = Object.assign({}, (lang && { lang }));
+        const element = this.wrap('pre', this.wrap('code', code), attrs);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML list to the summary buffer
+     *
+     * @param {string[]} items list of items to render
+     * @param {boolean} [ordered=false] (optional) if the rendered list should be ordered or not (default: false)
+     *
+     * @returns {Summary} summary instance
+     */
+    addList(items, ordered = false) {
+        const tag = ordered ? 'ol' : 'ul';
+        const listItems = items.map(item => this.wrap('li', item)).join('');
+        const element = this.wrap(tag, listItems);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML table to the summary buffer
+     *
+     * @param {SummaryTableCell[]} rows table rows
+     *
+     * @returns {Summary} summary instance
+     */
+    addTable(rows) {
+        const tableBody = rows
+            .map(row => {
+            const cells = row
+                .map(cell => {
+                if (typeof cell === 'string') {
+                    return this.wrap('td', cell);
+                }
+                const { header, data, colspan, rowspan } = cell;
+                const tag = header ? 'th' : 'td';
+                const attrs = Object.assign(Object.assign({}, (colspan && { colspan })), (rowspan && { rowspan }));
+                return this.wrap(tag, data, attrs);
+            })
+                .join('');
+            return this.wrap('tr', cells);
+        })
+            .join('');
+        const element = this.wrap('table', tableBody);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds a collapsable HTML details element to the summary buffer
+     *
+     * @param {string} label text for the closed state
+     * @param {string} content collapsable content
+     *
+     * @returns {Summary} summary instance
+     */
+    addDetails(label, content) {
+        const element = this.wrap('details', this.wrap('summary', label) + content);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML image tag to the summary buffer
+     *
+     * @param {string} src path to the image you to embed
+     * @param {string} alt text description of the image
+     * @param {SummaryImageOptions} options (optional) addition image attributes
+     *
+     * @returns {Summary} summary instance
+     */
+    addImage(src, alt, options) {
+        const { width, height } = options || {};
+        const attrs = Object.assign(Object.assign({}, (width && { width })), (height && { height }));
+        const element = this.wrap('img', null, Object.assign({ src, alt }, attrs));
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML section heading element
+     *
+     * @param {string} text heading text
+     * @param {number | string} [level=1] (optional) the heading level, default: 1
+     *
+     * @returns {Summary} summary instance
+     */
+    addHeading(text, level) {
+        const tag = `h${level}`;
+        const allowedTag = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)
+            ? tag
+            : 'h1';
+        const element = this.wrap(allowedTag, text);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML thematic break (<hr>) to the summary buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addSeparator() {
+        const element = this.wrap('hr', null);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML line break (<br>) to the summary buffer
+     *
+     * @returns {Summary} summary instance
+     */
+    addBreak() {
+        const element = this.wrap('br', null);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML blockquote to the summary buffer
+     *
+     * @param {string} text quote text
+     * @param {string} cite (optional) citation url
+     *
+     * @returns {Summary} summary instance
+     */
+    addQuote(text, cite) {
+        const attrs = Object.assign({}, (cite && { cite }));
+        const element = this.wrap('blockquote', text, attrs);
+        return this.addRaw(element).addEOL();
+    }
+    /**
+     * Adds an HTML anchor tag to the summary buffer
+     *
+     * @param {string} text link text/content
+     * @param {string} href hyperlink
+     *
+     * @returns {Summary} summary instance
+     */
+    addLink(text, href) {
+        const element = this.wrap('a', text, { href });
+        return this.addRaw(element).addEOL();
+    }
+}
+const _summary = new Summary();
+/**
+ * @deprecated use `core.summary`
+ */
+exports.markdownSummary = _summary;
+exports.summary = _summary;
+//# sourceMappingURL=summary.js.map
+
+/***/ }),
+
+/***/ 5278:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -1788,7 +2405,7 @@ exports.toCommandProperties = toCommandProperties;
 
 /***/ }),
 
-/***/ 514:
+/***/ 1514:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1823,8 +2440,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getExecOutput = exports.exec = void 0;
-const string_decoder_1 = __nccwpck_require__(576);
-const tr = __importStar(__nccwpck_require__(159));
+const string_decoder_1 = __nccwpck_require__(1576);
+const tr = __importStar(__nccwpck_require__(8159));
 /**
  * Exec a command.
  * Output will be streamed to the live console.
@@ -1898,7 +2515,7 @@ exports.getExecOutput = getExecOutput;
 
 /***/ }),
 
-/***/ 159:
+/***/ 8159:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -1933,13 +2550,13 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.argStringToArray = exports.ToolRunner = void 0;
-const os = __importStar(__nccwpck_require__(37));
-const events = __importStar(__nccwpck_require__(361));
-const child = __importStar(__nccwpck_require__(81));
-const path = __importStar(__nccwpck_require__(17));
-const io = __importStar(__nccwpck_require__(351));
-const ioUtil = __importStar(__nccwpck_require__(962));
-const timers_1 = __nccwpck_require__(512);
+const os = __importStar(__nccwpck_require__(2037));
+const events = __importStar(__nccwpck_require__(2361));
+const child = __importStar(__nccwpck_require__(2081));
+const path = __importStar(__nccwpck_require__(1017));
+const io = __importStar(__nccwpck_require__(7351));
+const ioUtil = __importStar(__nccwpck_require__(1962));
+const timers_1 = __nccwpck_require__(9512);
 /* eslint-disable @typescript-eslint/unbound-method */
 const IS_WINDOWS = process.platform === 'win32';
 /*
@@ -2523,28 +3140,41 @@ class ExecState extends events.EventEmitter {
 
 /***/ }),
 
-/***/ 702:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ 5526:
+/***/ (function(__unused_webpack_module, exports) {
 
 "use strict";
 
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.PersonalAccessTokenCredentialHandler = exports.BearerCredentialHandler = exports.BasicCredentialHandler = void 0;
 class BasicCredentialHandler {
     constructor(username, password) {
         this.username = username;
         this.password = password;
     }
     prepareRequest(options) {
-        options.headers['Authorization'] =
-            'Basic ' +
-                Buffer.from(this.username + ':' + this.password).toString('base64');
+        if (!options.headers) {
+            throw Error('The request has no headers');
+        }
+        options.headers['Authorization'] = `Basic ${Buffer.from(`${this.username}:${this.password}`).toString('base64')}`;
     }
     // This handler cannot handle 401
-    canHandleAuthentication(response) {
+    canHandleAuthentication() {
         return false;
     }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
+    handleAuthentication() {
+        return __awaiter(this, void 0, void 0, function* () {
+            throw new Error('not implemented');
+        });
     }
 }
 exports.BasicCredentialHandler = BasicCredentialHandler;
@@ -2555,14 +3185,19 @@ class BearerCredentialHandler {
     // currently implements pre-authorization
     // TODO: support preAuth = false where it hooks on 401
     prepareRequest(options) {
-        options.headers['Authorization'] = 'Bearer ' + this.token;
+        if (!options.headers) {
+            throw Error('The request has no headers');
+        }
+        options.headers['Authorization'] = `Bearer ${this.token}`;
     }
     // This handler cannot handle 401
-    canHandleAuthentication(response) {
+    canHandleAuthentication() {
         return false;
     }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
+    handleAuthentication() {
+        return __awaiter(this, void 0, void 0, function* () {
+            throw new Error('not implemented');
+        });
     }
 }
 exports.BearerCredentialHandler = BearerCredentialHandler;
@@ -2573,32 +3208,66 @@ class PersonalAccessTokenCredentialHandler {
     // currently implements pre-authorization
     // TODO: support preAuth = false where it hooks on 401
     prepareRequest(options) {
-        options.headers['Authorization'] =
-            'Basic ' + Buffer.from('PAT:' + this.token).toString('base64');
+        if (!options.headers) {
+            throw Error('The request has no headers');
+        }
+        options.headers['Authorization'] = `Basic ${Buffer.from(`PAT:${this.token}`).toString('base64')}`;
     }
     // This handler cannot handle 401
-    canHandleAuthentication(response) {
+    canHandleAuthentication() {
         return false;
     }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
+    handleAuthentication() {
+        return __awaiter(this, void 0, void 0, function* () {
+            throw new Error('not implemented');
+        });
     }
 }
 exports.PersonalAccessTokenCredentialHandler = PersonalAccessTokenCredentialHandler;
-
+//# sourceMappingURL=auth.js.map
 
 /***/ }),
 
-/***/ 925:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+/***/ 6255:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const http = __nccwpck_require__(685);
-const https = __nccwpck_require__(687);
-const pm = __nccwpck_require__(443);
-let tunnel;
+exports.HttpClient = exports.isHttps = exports.HttpClientResponse = exports.HttpClientError = exports.getProxyUrl = exports.MediaTypes = exports.Headers = exports.HttpCodes = void 0;
+const http = __importStar(__nccwpck_require__(3685));
+const https = __importStar(__nccwpck_require__(5687));
+const pm = __importStar(__nccwpck_require__(9835));
+const tunnel = __importStar(__nccwpck_require__(4294));
 var HttpCodes;
 (function (HttpCodes) {
     HttpCodes[HttpCodes["OK"] = 200] = "OK";
@@ -2643,7 +3312,7 @@ var MediaTypes;
  * @param serverUrl  The server URL where the request will be sent. For example, https://api.github.com
  */
 function getProxyUrl(serverUrl) {
-    let proxyUrl = pm.getProxyUrl(new URL(serverUrl));
+    const proxyUrl = pm.getProxyUrl(new URL(serverUrl));
     return proxyUrl ? proxyUrl.href : '';
 }
 exports.getProxyUrl = getProxyUrl;
@@ -2676,20 +3345,22 @@ class HttpClientResponse {
         this.message = message;
     }
     readBody() {
-        return new Promise(async (resolve, reject) => {
-            let output = Buffer.alloc(0);
-            this.message.on('data', (chunk) => {
-                output = Buffer.concat([output, chunk]);
-            });
-            this.message.on('end', () => {
-                resolve(output.toString());
-            });
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve) => __awaiter(this, void 0, void 0, function* () {
+                let output = Buffer.alloc(0);
+                this.message.on('data', (chunk) => {
+                    output = Buffer.concat([output, chunk]);
+                });
+                this.message.on('end', () => {
+                    resolve(output.toString());
+                });
+            }));
         });
     }
 }
 exports.HttpClientResponse = HttpClientResponse;
 function isHttps(requestUrl) {
-    let parsedUrl = new URL(requestUrl);
+    const parsedUrl = new URL(requestUrl);
     return parsedUrl.protocol === 'https:';
 }
 exports.isHttps = isHttps;
@@ -2732,141 +3403,169 @@ class HttpClient {
         }
     }
     options(requestUrl, additionalHeaders) {
-        return this.request('OPTIONS', requestUrl, null, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('OPTIONS', requestUrl, null, additionalHeaders || {});
+        });
     }
     get(requestUrl, additionalHeaders) {
-        return this.request('GET', requestUrl, null, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('GET', requestUrl, null, additionalHeaders || {});
+        });
     }
     del(requestUrl, additionalHeaders) {
-        return this.request('DELETE', requestUrl, null, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('DELETE', requestUrl, null, additionalHeaders || {});
+        });
     }
     post(requestUrl, data, additionalHeaders) {
-        return this.request('POST', requestUrl, data, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('POST', requestUrl, data, additionalHeaders || {});
+        });
     }
     patch(requestUrl, data, additionalHeaders) {
-        return this.request('PATCH', requestUrl, data, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('PATCH', requestUrl, data, additionalHeaders || {});
+        });
     }
     put(requestUrl, data, additionalHeaders) {
-        return this.request('PUT', requestUrl, data, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('PUT', requestUrl, data, additionalHeaders || {});
+        });
     }
     head(requestUrl, additionalHeaders) {
-        return this.request('HEAD', requestUrl, null, additionalHeaders || {});
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request('HEAD', requestUrl, null, additionalHeaders || {});
+        });
     }
     sendStream(verb, requestUrl, stream, additionalHeaders) {
-        return this.request(verb, requestUrl, stream, additionalHeaders);
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.request(verb, requestUrl, stream, additionalHeaders);
+        });
     }
     /**
      * Gets a typed object from an endpoint
      * Be aware that not found returns a null.  Other errors (4xx, 5xx) reject the promise
      */
-    async getJson(requestUrl, additionalHeaders = {}) {
-        additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
-        let res = await this.get(requestUrl, additionalHeaders);
-        return this._processResponse(res, this.requestOptions);
+    getJson(requestUrl, additionalHeaders = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
+            const res = yield this.get(requestUrl, additionalHeaders);
+            return this._processResponse(res, this.requestOptions);
+        });
     }
-    async postJson(requestUrl, obj, additionalHeaders = {}) {
-        let data = JSON.stringify(obj, null, 2);
-        additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
-        additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
-        let res = await this.post(requestUrl, data, additionalHeaders);
-        return this._processResponse(res, this.requestOptions);
+    postJson(requestUrl, obj, additionalHeaders = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const data = JSON.stringify(obj, null, 2);
+            additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
+            additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
+            const res = yield this.post(requestUrl, data, additionalHeaders);
+            return this._processResponse(res, this.requestOptions);
+        });
     }
-    async putJson(requestUrl, obj, additionalHeaders = {}) {
-        let data = JSON.stringify(obj, null, 2);
-        additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
-        additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
-        let res = await this.put(requestUrl, data, additionalHeaders);
-        return this._processResponse(res, this.requestOptions);
+    putJson(requestUrl, obj, additionalHeaders = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const data = JSON.stringify(obj, null, 2);
+            additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
+            additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
+            const res = yield this.put(requestUrl, data, additionalHeaders);
+            return this._processResponse(res, this.requestOptions);
+        });
     }
-    async patchJson(requestUrl, obj, additionalHeaders = {}) {
-        let data = JSON.stringify(obj, null, 2);
-        additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
-        additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
-        let res = await this.patch(requestUrl, data, additionalHeaders);
-        return this._processResponse(res, this.requestOptions);
+    patchJson(requestUrl, obj, additionalHeaders = {}) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const data = JSON.stringify(obj, null, 2);
+            additionalHeaders[Headers.Accept] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.Accept, MediaTypes.ApplicationJson);
+            additionalHeaders[Headers.ContentType] = this._getExistingOrDefaultHeader(additionalHeaders, Headers.ContentType, MediaTypes.ApplicationJson);
+            const res = yield this.patch(requestUrl, data, additionalHeaders);
+            return this._processResponse(res, this.requestOptions);
+        });
     }
     /**
      * Makes a raw http request.
      * All other methods such as get, post, patch, and request ultimately call this.
      * Prefer get, del, post and patch
      */
-    async request(verb, requestUrl, data, headers) {
-        if (this._disposed) {
-            throw new Error('Client has already been disposed.');
-        }
-        let parsedUrl = new URL(requestUrl);
-        let info = this._prepareRequest(verb, parsedUrl, headers);
-        // Only perform retries on reads since writes may not be idempotent.
-        let maxTries = this._allowRetries && RetryableHttpVerbs.indexOf(verb) != -1
-            ? this._maxRetries + 1
-            : 1;
-        let numTries = 0;
-        let response;
-        while (numTries < maxTries) {
-            response = await this.requestRaw(info, data);
-            // Check if it's an authentication challenge
-            if (response &&
-                response.message &&
-                response.message.statusCode === HttpCodes.Unauthorized) {
-                let authenticationHandler;
-                for (let i = 0; i < this.handlers.length; i++) {
-                    if (this.handlers[i].canHandleAuthentication(response)) {
-                        authenticationHandler = this.handlers[i];
-                        break;
-                    }
-                }
-                if (authenticationHandler) {
-                    return authenticationHandler.handleAuthentication(this, info, data);
-                }
-                else {
-                    // We have received an unauthorized response but have no handlers to handle it.
-                    // Let the response return to the caller.
-                    return response;
-                }
+    request(verb, requestUrl, data, headers) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this._disposed) {
+                throw new Error('Client has already been disposed.');
             }
-            let redirectsRemaining = this._maxRedirects;
-            while (HttpRedirectCodes.indexOf(response.message.statusCode) != -1 &&
-                this._allowRedirects &&
-                redirectsRemaining > 0) {
-                const redirectUrl = response.message.headers['location'];
-                if (!redirectUrl) {
-                    // if there's no location to redirect to, we won't
-                    break;
-                }
-                let parsedRedirectUrl = new URL(redirectUrl);
-                if (parsedUrl.protocol == 'https:' &&
-                    parsedUrl.protocol != parsedRedirectUrl.protocol &&
-                    !this._allowRedirectDowngrade) {
-                    throw new Error('Redirect from HTTPS to HTTP protocol. This downgrade is not allowed for security reasons. If you want to allow this behavior, set the allowRedirectDowngrade option to true.');
-                }
-                // we need to finish reading the response before reassigning response
-                // which will leak the open socket.
-                await response.readBody();
-                // strip authorization header if redirected to a different hostname
-                if (parsedRedirectUrl.hostname !== parsedUrl.hostname) {
-                    for (let header in headers) {
-                        // header names are case insensitive
-                        if (header.toLowerCase() === 'authorization') {
-                            delete headers[header];
+            const parsedUrl = new URL(requestUrl);
+            let info = this._prepareRequest(verb, parsedUrl, headers);
+            // Only perform retries on reads since writes may not be idempotent.
+            const maxTries = this._allowRetries && RetryableHttpVerbs.includes(verb)
+                ? this._maxRetries + 1
+                : 1;
+            let numTries = 0;
+            let response;
+            do {
+                response = yield this.requestRaw(info, data);
+                // Check if it's an authentication challenge
+                if (response &&
+                    response.message &&
+                    response.message.statusCode === HttpCodes.Unauthorized) {
+                    let authenticationHandler;
+                    for (const handler of this.handlers) {
+                        if (handler.canHandleAuthentication(response)) {
+                            authenticationHandler = handler;
+                            break;
                         }
                     }
+                    if (authenticationHandler) {
+                        return authenticationHandler.handleAuthentication(this, info, data);
+                    }
+                    else {
+                        // We have received an unauthorized response but have no handlers to handle it.
+                        // Let the response return to the caller.
+                        return response;
+                    }
                 }
-                // let's make the request with the new redirectUrl
-                info = this._prepareRequest(verb, parsedRedirectUrl, headers);
-                response = await this.requestRaw(info, data);
-                redirectsRemaining--;
-            }
-            if (HttpResponseRetryCodes.indexOf(response.message.statusCode) == -1) {
-                // If not a retry code, return immediately instead of retrying
-                return response;
-            }
-            numTries += 1;
-            if (numTries < maxTries) {
-                await response.readBody();
-                await this._performExponentialBackoff(numTries);
-            }
-        }
-        return response;
+                let redirectsRemaining = this._maxRedirects;
+                while (response.message.statusCode &&
+                    HttpRedirectCodes.includes(response.message.statusCode) &&
+                    this._allowRedirects &&
+                    redirectsRemaining > 0) {
+                    const redirectUrl = response.message.headers['location'];
+                    if (!redirectUrl) {
+                        // if there's no location to redirect to, we won't
+                        break;
+                    }
+                    const parsedRedirectUrl = new URL(redirectUrl);
+                    if (parsedUrl.protocol === 'https:' &&
+                        parsedUrl.protocol !== parsedRedirectUrl.protocol &&
+                        !this._allowRedirectDowngrade) {
+                        throw new Error('Redirect from HTTPS to HTTP protocol. This downgrade is not allowed for security reasons. If you want to allow this behavior, set the allowRedirectDowngrade option to true.');
+                    }
+                    // we need to finish reading the response before reassigning response
+                    // which will leak the open socket.
+                    yield response.readBody();
+                    // strip authorization header if redirected to a different hostname
+                    if (parsedRedirectUrl.hostname !== parsedUrl.hostname) {
+                        for (const header in headers) {
+                            // header names are case insensitive
+                            if (header.toLowerCase() === 'authorization') {
+                                delete headers[header];
+                            }
+                        }
+                    }
+                    // let's make the request with the new redirectUrl
+                    info = this._prepareRequest(verb, parsedRedirectUrl, headers);
+                    response = yield this.requestRaw(info, data);
+                    redirectsRemaining--;
+                }
+                if (!response.message.statusCode ||
+                    !HttpResponseRetryCodes.includes(response.message.statusCode)) {
+                    // If not a retry code, return immediately instead of retrying
+                    return response;
+                }
+                numTries += 1;
+                if (numTries < maxTries) {
+                    yield response.readBody();
+                    yield this._performExponentialBackoff(numTries);
+                }
+            } while (numTries < maxTries);
+            return response;
+        });
     }
     /**
      * Needs to be called if keepAlive is set to true in request options.
@@ -2883,14 +3582,22 @@ class HttpClient {
      * @param data
      */
     requestRaw(info, data) {
-        return new Promise((resolve, reject) => {
-            let callbackForResult = function (err, res) {
-                if (err) {
-                    reject(err);
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                function callbackForResult(err, res) {
+                    if (err) {
+                        reject(err);
+                    }
+                    else if (!res) {
+                        // If `err` is not passed, then `res` must be passed.
+                        reject(new Error('Unknown error'));
+                    }
+                    else {
+                        resolve(res);
+                    }
                 }
-                resolve(res);
-            };
-            this.requestRawWithCallback(info, data, callbackForResult);
+                this.requestRawWithCallback(info, data, callbackForResult);
+            });
         });
     }
     /**
@@ -2900,21 +3607,24 @@ class HttpClient {
      * @param onResult
      */
     requestRawWithCallback(info, data, onResult) {
-        let socket;
         if (typeof data === 'string') {
+            if (!info.options.headers) {
+                info.options.headers = {};
+            }
             info.options.headers['Content-Length'] = Buffer.byteLength(data, 'utf8');
         }
         let callbackCalled = false;
-        let handleResult = (err, res) => {
+        function handleResult(err, res) {
             if (!callbackCalled) {
                 callbackCalled = true;
                 onResult(err, res);
             }
-        };
-        let req = info.httpModule.request(info.options, (msg) => {
-            let res = new HttpClientResponse(msg);
-            handleResult(null, res);
+        }
+        const req = info.httpModule.request(info.options, (msg) => {
+            const res = new HttpClientResponse(msg);
+            handleResult(undefined, res);
         });
+        let socket;
         req.on('socket', sock => {
             socket = sock;
         });
@@ -2923,12 +3633,12 @@ class HttpClient {
             if (socket) {
                 socket.end();
             }
-            handleResult(new Error('Request timeout: ' + info.options.path), null);
+            handleResult(new Error(`Request timeout: ${info.options.path}`));
         });
         req.on('error', function (err) {
             // err has statusCode property
             // res should have headers
-            handleResult(err, null);
+            handleResult(err);
         });
         if (data && typeof data === 'string') {
             req.write(data, 'utf8');
@@ -2949,7 +3659,7 @@ class HttpClient {
      * @param serverUrl  The server URL where the request will be sent. For example, https://api.github.com
      */
     getAgent(serverUrl) {
-        let parsedUrl = new URL(serverUrl);
+        const parsedUrl = new URL(serverUrl);
         return this._getAgent(parsedUrl);
     }
     _prepareRequest(method, requestUrl, headers) {
@@ -2973,21 +3683,19 @@ class HttpClient {
         info.options.agent = this._getAgent(info.parsedUrl);
         // gives handlers an opportunity to participate
         if (this.handlers) {
-            this.handlers.forEach(handler => {
+            for (const handler of this.handlers) {
                 handler.prepareRequest(info.options);
-            });
+            }
         }
         return info;
     }
     _mergeHeaders(headers) {
-        const lowercaseKeys = obj => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
         if (this.requestOptions && this.requestOptions.headers) {
-            return Object.assign({}, lowercaseKeys(this.requestOptions.headers), lowercaseKeys(headers));
+            return Object.assign({}, lowercaseKeys(this.requestOptions.headers), lowercaseKeys(headers || {}));
         }
         return lowercaseKeys(headers || {});
     }
     _getExistingOrDefaultHeader(additionalHeaders, header, _default) {
-        const lowercaseKeys = obj => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
         let clientHeader;
         if (this.requestOptions && this.requestOptions.headers) {
             clientHeader = lowercaseKeys(this.requestOptions.headers)[header];
@@ -2996,8 +3704,8 @@ class HttpClient {
     }
     _getAgent(parsedUrl) {
         let agent;
-        let proxyUrl = pm.getProxyUrl(parsedUrl);
-        let useProxy = proxyUrl && proxyUrl.hostname;
+        const proxyUrl = pm.getProxyUrl(parsedUrl);
+        const useProxy = proxyUrl && proxyUrl.hostname;
         if (this._keepAlive && useProxy) {
             agent = this._proxyAgent;
         }
@@ -3005,29 +3713,22 @@ class HttpClient {
             agent = this._agent;
         }
         // if agent is already assigned use that agent.
-        if (!!agent) {
+        if (agent) {
             return agent;
         }
         const usingSsl = parsedUrl.protocol === 'https:';
         let maxSockets = 100;
-        if (!!this.requestOptions) {
+        if (this.requestOptions) {
             maxSockets = this.requestOptions.maxSockets || http.globalAgent.maxSockets;
         }
-        if (useProxy) {
-            // If using proxy, need tunnel
-            if (!tunnel) {
-                tunnel = __nccwpck_require__(294);
-            }
+        // This is `useProxy` again, but we need to check `proxyURl` directly for TypeScripts's flow analysis.
+        if (proxyUrl && proxyUrl.hostname) {
             const agentOptions = {
-                maxSockets: maxSockets,
+                maxSockets,
                 keepAlive: this._keepAlive,
-                proxy: {
-                    ...((proxyUrl.username || proxyUrl.password) && {
-                        proxyAuth: `${proxyUrl.username}:${proxyUrl.password}`
-                    }),
-                    host: proxyUrl.hostname,
-                    port: proxyUrl.port
-                }
+                proxy: Object.assign(Object.assign({}, ((proxyUrl.username || proxyUrl.password) && {
+                    proxyAuth: `${proxyUrl.username}:${proxyUrl.password}`
+                })), { host: proxyUrl.hostname, port: proxyUrl.port })
             };
             let tunnelAgent;
             const overHttps = proxyUrl.protocol === 'https:';
@@ -3042,7 +3743,7 @@ class HttpClient {
         }
         // if reusing agent across request and tunneling agent isn't assigned create a new agent
         if (this._keepAlive && !agent) {
-            const options = { keepAlive: this._keepAlive, maxSockets: maxSockets };
+            const options = { keepAlive: this._keepAlive, maxSockets };
             agent = usingSsl ? new https.Agent(options) : new http.Agent(options);
             this._agent = agent;
         }
@@ -3061,109 +3762,117 @@ class HttpClient {
         return agent;
     }
     _performExponentialBackoff(retryNumber) {
-        retryNumber = Math.min(ExponentialBackoffCeiling, retryNumber);
-        const ms = ExponentialBackoffTimeSlice * Math.pow(2, retryNumber);
-        return new Promise(resolve => setTimeout(() => resolve(), ms));
+        return __awaiter(this, void 0, void 0, function* () {
+            retryNumber = Math.min(ExponentialBackoffCeiling, retryNumber);
+            const ms = ExponentialBackoffTimeSlice * Math.pow(2, retryNumber);
+            return new Promise(resolve => setTimeout(() => resolve(), ms));
+        });
     }
-    static dateTimeDeserializer(key, value) {
-        if (typeof value === 'string') {
-            let a = new Date(value);
-            if (!isNaN(a.valueOf())) {
-                return a;
-            }
-        }
-        return value;
-    }
-    async _processResponse(res, options) {
-        return new Promise(async (resolve, reject) => {
-            const statusCode = res.message.statusCode;
-            const response = {
-                statusCode: statusCode,
-                result: null,
-                headers: {}
-            };
-            // not found leads to null obj returned
-            if (statusCode == HttpCodes.NotFound) {
-                resolve(response);
-            }
-            let obj;
-            let contents;
-            // get the result from the body
-            try {
-                contents = await res.readBody();
-                if (contents && contents.length > 0) {
-                    if (options && options.deserializeDates) {
-                        obj = JSON.parse(contents, HttpClient.dateTimeDeserializer);
+    _processResponse(res, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => __awaiter(this, void 0, void 0, function* () {
+                const statusCode = res.message.statusCode || 0;
+                const response = {
+                    statusCode,
+                    result: null,
+                    headers: {}
+                };
+                // not found leads to null obj returned
+                if (statusCode === HttpCodes.NotFound) {
+                    resolve(response);
+                }
+                // get the result from the body
+                function dateTimeDeserializer(key, value) {
+                    if (typeof value === 'string') {
+                        const a = new Date(value);
+                        if (!isNaN(a.valueOf())) {
+                            return a;
+                        }
+                    }
+                    return value;
+                }
+                let obj;
+                let contents;
+                try {
+                    contents = yield res.readBody();
+                    if (contents && contents.length > 0) {
+                        if (options && options.deserializeDates) {
+                            obj = JSON.parse(contents, dateTimeDeserializer);
+                        }
+                        else {
+                            obj = JSON.parse(contents);
+                        }
+                        response.result = obj;
+                    }
+                    response.headers = res.message.headers;
+                }
+                catch (err) {
+                    // Invalid resource (contents not json);  leaving result obj null
+                }
+                // note that 3xx redirects are handled by the http layer.
+                if (statusCode > 299) {
+                    let msg;
+                    // if exception/error in body, attempt to get better error
+                    if (obj && obj.message) {
+                        msg = obj.message;
+                    }
+                    else if (contents && contents.length > 0) {
+                        // it may be the case that the exception is in the body message as string
+                        msg = contents;
                     }
                     else {
-                        obj = JSON.parse(contents);
+                        msg = `Failed request: (${statusCode})`;
                     }
-                    response.result = obj;
-                }
-                response.headers = res.message.headers;
-            }
-            catch (err) {
-                // Invalid resource (contents not json);  leaving result obj null
-            }
-            // note that 3xx redirects are handled by the http layer.
-            if (statusCode > 299) {
-                let msg;
-                // if exception/error in body, attempt to get better error
-                if (obj && obj.message) {
-                    msg = obj.message;
-                }
-                else if (contents && contents.length > 0) {
-                    // it may be the case that the exception is in the body message as string
-                    msg = contents;
+                    const err = new HttpClientError(msg, statusCode);
+                    err.result = response.result;
+                    reject(err);
                 }
                 else {
-                    msg = 'Failed request: (' + statusCode + ')';
+                    resolve(response);
                 }
-                let err = new HttpClientError(msg, statusCode);
-                err.result = response.result;
-                reject(err);
-            }
-            else {
-                resolve(response);
-            }
+            }));
         });
     }
 }
 exports.HttpClient = HttpClient;
-
+const lowercaseKeys = (obj) => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
+//# sourceMappingURL=index.js.map
 
 /***/ }),
 
-/***/ 443:
+/***/ 9835:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.checkBypass = exports.getProxyUrl = void 0;
 function getProxyUrl(reqUrl) {
-    let usingSsl = reqUrl.protocol === 'https:';
-    let proxyUrl;
+    const usingSsl = reqUrl.protocol === 'https:';
     if (checkBypass(reqUrl)) {
-        return proxyUrl;
+        return undefined;
     }
-    let proxyVar;
-    if (usingSsl) {
-        proxyVar = process.env['https_proxy'] || process.env['HTTPS_PROXY'];
+    const proxyVar = (() => {
+        if (usingSsl) {
+            return process.env['https_proxy'] || process.env['HTTPS_PROXY'];
+        }
+        else {
+            return process.env['http_proxy'] || process.env['HTTP_PROXY'];
+        }
+    })();
+    if (proxyVar) {
+        return new URL(proxyVar);
     }
     else {
-        proxyVar = process.env['http_proxy'] || process.env['HTTP_PROXY'];
+        return undefined;
     }
-    if (proxyVar) {
-        proxyUrl = new URL(proxyVar);
-    }
-    return proxyUrl;
 }
 exports.getProxyUrl = getProxyUrl;
 function checkBypass(reqUrl) {
     if (!reqUrl.hostname) {
         return false;
     }
-    let noProxy = process.env['no_proxy'] || process.env['NO_PROXY'] || '';
+    const noProxy = process.env['no_proxy'] || process.env['NO_PROXY'] || '';
     if (!noProxy) {
         return false;
     }
@@ -3179,12 +3888,12 @@ function checkBypass(reqUrl) {
         reqPort = 443;
     }
     // Format the request hostname and hostname with port
-    let upperReqHosts = [reqUrl.hostname.toUpperCase()];
+    const upperReqHosts = [reqUrl.hostname.toUpperCase()];
     if (typeof reqPort === 'number') {
         upperReqHosts.push(`${upperReqHosts[0]}:${reqPort}`);
     }
     // Compare request host against noproxy
-    for (let upperNoProxyItem of noProxy
+    for (const upperNoProxyItem of noProxy
         .split(',')
         .map(x => x.trim().toUpperCase())
         .filter(x => x)) {
@@ -3195,11 +3904,11 @@ function checkBypass(reqUrl) {
     return false;
 }
 exports.checkBypass = checkBypass;
-
+//# sourceMappingURL=proxy.js.map
 
 /***/ }),
 
-/***/ 962:
+/***/ 1962:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -3234,11 +3943,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 var _a;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getCmdPath = exports.tryGetExecutablePath = exports.isRooted = exports.isDirectory = exports.exists = exports.IS_WINDOWS = exports.unlink = exports.symlink = exports.stat = exports.rmdir = exports.rename = exports.readlink = exports.readdir = exports.mkdir = exports.lstat = exports.copyFile = exports.chmod = void 0;
-const fs = __importStar(__nccwpck_require__(147));
-const path = __importStar(__nccwpck_require__(17));
-_a = fs.promises, exports.chmod = _a.chmod, exports.copyFile = _a.copyFile, exports.lstat = _a.lstat, exports.mkdir = _a.mkdir, exports.readdir = _a.readdir, exports.readlink = _a.readlink, exports.rename = _a.rename, exports.rmdir = _a.rmdir, exports.stat = _a.stat, exports.symlink = _a.symlink, exports.unlink = _a.unlink;
+exports.getCmdPath = exports.tryGetExecutablePath = exports.isRooted = exports.isDirectory = exports.exists = exports.READONLY = exports.UV_FS_O_EXLOCK = exports.IS_WINDOWS = exports.unlink = exports.symlink = exports.stat = exports.rmdir = exports.rm = exports.rename = exports.readlink = exports.readdir = exports.open = exports.mkdir = exports.lstat = exports.copyFile = exports.chmod = void 0;
+const fs = __importStar(__nccwpck_require__(7147));
+const path = __importStar(__nccwpck_require__(1017));
+_a = fs.promises
+// export const {open} = 'fs'
+, exports.chmod = _a.chmod, exports.copyFile = _a.copyFile, exports.lstat = _a.lstat, exports.mkdir = _a.mkdir, exports.open = _a.open, exports.readdir = _a.readdir, exports.readlink = _a.readlink, exports.rename = _a.rename, exports.rm = _a.rm, exports.rmdir = _a.rmdir, exports.stat = _a.stat, exports.symlink = _a.symlink, exports.unlink = _a.unlink;
+// export const {open} = 'fs'
 exports.IS_WINDOWS = process.platform === 'win32';
+// See https://github.com/nodejs/node/blob/d0153aee367422d0858105abec186da4dff0a0c5/deps/uv/include/uv/win.h#L691
+exports.UV_FS_O_EXLOCK = 0x10000000;
+exports.READONLY = fs.constants.O_RDONLY;
 function exists(fsPath) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
@@ -3383,7 +4098,7 @@ exports.getCmdPath = getCmdPath;
 
 /***/ }),
 
-/***/ 351:
+/***/ 7351:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -3418,13 +4133,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.findInPath = exports.which = exports.mkdirP = exports.rmRF = exports.mv = exports.cp = void 0;
-const assert_1 = __nccwpck_require__(491);
-const childProcess = __importStar(__nccwpck_require__(81));
-const path = __importStar(__nccwpck_require__(17));
-const util_1 = __nccwpck_require__(837);
-const ioUtil = __importStar(__nccwpck_require__(962));
-const exec = util_1.promisify(childProcess.exec);
-const execFile = util_1.promisify(childProcess.execFile);
+const assert_1 = __nccwpck_require__(9491);
+const path = __importStar(__nccwpck_require__(1017));
+const ioUtil = __importStar(__nccwpck_require__(1962));
 /**
  * Copies a file or folder.
  * Based off of shelljs - https://github.com/shelljs/shelljs/blob/9237f66c52e5daa40458f94f9565e18e8132f5a6/src/cp.js
@@ -3505,61 +4216,23 @@ exports.mv = mv;
 function rmRF(inputPath) {
     return __awaiter(this, void 0, void 0, function* () {
         if (ioUtil.IS_WINDOWS) {
-            // Node doesn't provide a delete operation, only an unlink function. This means that if the file is being used by another
-            // program (e.g. antivirus), it won't be deleted. To address this, we shell out the work to rd/del.
             // Check for invalid characters
             // https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file
             if (/[*"<>|]/.test(inputPath)) {
                 throw new Error('File path must not contain `*`, `"`, `<`, `>` or `|` on Windows');
             }
-            try {
-                const cmdPath = ioUtil.getCmdPath();
-                if (yield ioUtil.isDirectory(inputPath, true)) {
-                    yield exec(`${cmdPath} /s /c "rd /s /q "%inputPath%""`, {
-                        env: { inputPath }
-                    });
-                }
-                else {
-                    yield exec(`${cmdPath} /s /c "del /f /a "%inputPath%""`, {
-                        env: { inputPath }
-                    });
-                }
-            }
-            catch (err) {
-                // if you try to delete a file that doesn't exist, desired result is achieved
-                // other errors are valid
-                if (err.code !== 'ENOENT')
-                    throw err;
-            }
-            // Shelling out fails to remove a symlink folder with missing source, this unlink catches that
-            try {
-                yield ioUtil.unlink(inputPath);
-            }
-            catch (err) {
-                // if you try to delete a file that doesn't exist, desired result is achieved
-                // other errors are valid
-                if (err.code !== 'ENOENT')
-                    throw err;
-            }
         }
-        else {
-            let isDir = false;
-            try {
-                isDir = yield ioUtil.isDirectory(inputPath);
-            }
-            catch (err) {
-                // if you try to delete a file that doesn't exist, desired result is achieved
-                // other errors are valid
-                if (err.code !== 'ENOENT')
-                    throw err;
-                return;
-            }
-            if (isDir) {
-                yield execFile(`rm`, [`-rf`, `${inputPath}`]);
-            }
-            else {
-                yield ioUtil.unlink(inputPath);
-            }
+        try {
+            // note if path does not exist, error is silent
+            yield ioUtil.rm(inputPath, {
+                force: true,
+                maxRetries: 3,
+                recursive: true,
+                retryDelay: 300
+            });
+        }
+        catch (err) {
+            throw new Error(`File was unable to be removed ${err}`);
         }
     });
 }
@@ -3731,27 +4404,249 @@ function copyFile(srcFile, destFile, force) {
 
 /***/ }),
 
-/***/ 294:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+/***/ 4773:
+/***/ (function(__unused_webpack_module, exports) {
 
-module.exports = __nccwpck_require__(219);
+(function (global, factory) {
+     true ? factory(exports) :
+    0;
+})(this, (function (exports) { 'use strict';
+
+    const semver = /^[v^~<>=]*?(\d+)(?:\.([x*]|\d+)(?:\.([x*]|\d+)(?:\.([x*]|\d+))?(?:-([\da-z\-]+(?:\.[\da-z\-]+)*))?(?:\+[\da-z\-]+(?:\.[\da-z\-]+)*)?)?)?$/i;
+    const validateAndParse = (version) => {
+        if (typeof version !== 'string') {
+            throw new TypeError('Invalid argument expected string');
+        }
+        const match = version.match(semver);
+        if (!match) {
+            throw new Error(`Invalid argument not valid semver ('${version}' received)`);
+        }
+        match.shift();
+        return match;
+    };
+    const isWildcard = (s) => s === '*' || s === 'x' || s === 'X';
+    const tryParse = (v) => {
+        const n = parseInt(v, 10);
+        return isNaN(n) ? v : n;
+    };
+    const forceType = (a, b) => typeof a !== typeof b ? [String(a), String(b)] : [a, b];
+    const compareStrings = (a, b) => {
+        if (isWildcard(a) || isWildcard(b))
+            return 0;
+        const [ap, bp] = forceType(tryParse(a), tryParse(b));
+        if (ap > bp)
+            return 1;
+        if (ap < bp)
+            return -1;
+        return 0;
+    };
+    const compareSegments = (a, b) => {
+        for (let i = 0; i < Math.max(a.length, b.length); i++) {
+            const r = compareStrings(a[i] || '0', b[i] || '0');
+            if (r !== 0)
+                return r;
+        }
+        return 0;
+    };
+
+    /**
+     * Compare [semver](https://semver.org/) version strings to find greater, equal or lesser.
+     * This library supports the full semver specification, including comparing versions with different number of digits like `1.0.0`, `1.0`, `1`, and pre-release versions like `1.0.0-alpha`.
+     * @param v1 - First version to compare
+     * @param v2 - Second version to compare
+     * @returns Numeric value compatible with the [Array.sort(fn) interface](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort#Parameters).
+     */
+    const compareVersions = (v1, v2) => {
+        // validate input and split into segments
+        const n1 = validateAndParse(v1);
+        const n2 = validateAndParse(v2);
+        // pop off the patch
+        const p1 = n1.pop();
+        const p2 = n2.pop();
+        // validate numbers
+        const r = compareSegments(n1, n2);
+        if (r !== 0)
+            return r;
+        // validate pre-release
+        if (p1 && p2) {
+            return compareSegments(p1.split('.'), p2.split('.'));
+        }
+        else if (p1 || p2) {
+            return p1 ? -1 : 1;
+        }
+        return 0;
+    };
+
+    /**
+     * Compare [semver](https://semver.org/) version strings using the specified operator.
+     *
+     * @param v1 First version to compare
+     * @param v2 Second version to compare
+     * @param operator Allowed arithmetic operator to use
+     * @returns `true` if the comparison between the firstVersion and the secondVersion satisfies the operator, `false` otherwise.
+     *
+     * @example
+     * ```
+     * compare('10.1.8', '10.0.4', '>'); // return true
+     * compare('10.0.1', '10.0.1', '='); // return true
+     * compare('10.1.1', '10.2.2', '<'); // return true
+     * compare('10.1.1', '10.2.2', '<='); // return true
+     * compare('10.1.1', '10.2.2', '>='); // return false
+     * ```
+     */
+    const compare = (v1, v2, operator) => {
+        // validate input operator
+        assertValidOperator(operator);
+        // since result of compareVersions can only be -1 or 0 or 1
+        // a simple map can be used to replace switch
+        const res = compareVersions(v1, v2);
+        return operatorResMap[operator].includes(res);
+    };
+    const operatorResMap = {
+        '>': [1],
+        '>=': [0, 1],
+        '=': [0],
+        '<=': [-1, 0],
+        '<': [-1],
+        '!=': [-1, 1],
+    };
+    const allowedOperators = Object.keys(operatorResMap);
+    const assertValidOperator = (op) => {
+        if (typeof op !== 'string') {
+            throw new TypeError(`Invalid operator type, expected string but got ${typeof op}`);
+        }
+        if (allowedOperators.indexOf(op) === -1) {
+            throw new Error(`Invalid operator, expected one of ${allowedOperators.join('|')}`);
+        }
+    };
+
+    /**
+     * Match [npm semver](https://docs.npmjs.com/cli/v6/using-npm/semver) version range.
+     *
+     * @param version Version number to match
+     * @param range Range pattern for version
+     * @returns `true` if the version number is within the range, `false` otherwise.
+     *
+     * @example
+     * ```
+     * satisfies('1.1.0', '^1.0.0'); // return true
+     * satisfies('1.1.0', '~1.0.0'); // return false
+     * ```
+     */
+    const satisfies = (version, range) => {
+        // clean input
+        range = range.replace(/([><=]+)\s+/g, '$1');
+        // handle multiple comparators
+        if (range.includes('||')) {
+            return range.split('||').some((r) => satisfies(version, r));
+        }
+        else if (range.includes(' - ')) {
+            const [a, b] = range.split(' - ', 2);
+            return satisfies(version, `>=${a} <=${b}`);
+        }
+        else if (range.includes(' ')) {
+            return range
+                .trim()
+                .replace(/\s{2,}/g, ' ')
+                .split(' ')
+                .every((r) => satisfies(version, r));
+        }
+        // if no range operator then "="
+        const m = range.match(/^([<>=~^]+)/);
+        const op = m ? m[1] : '=';
+        // if gt/lt/eq then operator compare
+        if (op !== '^' && op !== '~')
+            return compare(version, range, op);
+        // else range of either "~" or "^" is assumed
+        const [v1, v2, v3, , vp] = validateAndParse(version);
+        const [r1, r2, r3, , rp] = validateAndParse(range);
+        const v = [v1, v2, v3];
+        const r = [r1, r2 !== null && r2 !== void 0 ? r2 : 'x', r3 !== null && r3 !== void 0 ? r3 : 'x'];
+        // validate pre-release
+        if (rp) {
+            if (!vp)
+                return false;
+            if (compareSegments(v, r) !== 0)
+                return false;
+            if (compareSegments(vp.split('.'), rp.split('.')) === -1)
+                return false;
+        }
+        // first non-zero number
+        const nonZero = r.findIndex((v) => v !== '0') + 1;
+        // pointer to where segments can be >=
+        const i = op === '~' ? 2 : nonZero > 1 ? nonZero : 1;
+        // before pointer must be equal
+        if (compareSegments(v.slice(0, i), r.slice(0, i)) !== 0)
+            return false;
+        // after pointer must be >=
+        if (compareSegments(v.slice(i), r.slice(i)) === -1)
+            return false;
+        return true;
+    };
+
+    /**
+     * Validate [semver](https://semver.org/) version strings.
+     *
+     * @param version Version number to validate
+     * @returns `true` if the version number is a valid semver version number, `false` otherwise.
+     *
+     * @example
+     * ```
+     * validate('1.0.0-rc.1'); // return true
+     * validate('1.0-rc.1'); // return false
+     * validate('foo'); // return false
+     * ```
+     */
+    const validate = (version) => typeof version === 'string' && /^[v\d]/.test(version) && semver.test(version);
+    /**
+     * Validate [semver](https://semver.org/) version strings strictly. Will not accept wildcards and version ranges.
+     *
+     * @param version Version number to validate
+     * @returns `true` if the version number is a valid semver version number `false` otherwise
+     *
+     * @example
+     * ```
+     * validate('1.0.0-rc.1'); // return true
+     * validate('1.0-rc.1'); // return false
+     * validate('foo'); // return false
+     * ```
+     */
+    const validateStrict = (version) => typeof version === 'string' &&
+        /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/.test(version);
+
+    exports.compare = compare;
+    exports.compareVersions = compareVersions;
+    exports.satisfies = satisfies;
+    exports.validate = validate;
+    exports.validateStrict = validateStrict;
+
+}));
+//# sourceMappingURL=index.js.map
 
 
 /***/ }),
 
-/***/ 219:
+/***/ 4294:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+module.exports = __nccwpck_require__(4219);
+
+
+/***/ }),
+
+/***/ 4219:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 
-var net = __nccwpck_require__(808);
-var tls = __nccwpck_require__(404);
-var http = __nccwpck_require__(685);
-var https = __nccwpck_require__(687);
-var events = __nccwpck_require__(361);
-var assert = __nccwpck_require__(491);
-var util = __nccwpck_require__(837);
+var net = __nccwpck_require__(1808);
+var tls = __nccwpck_require__(4404);
+var http = __nccwpck_require__(3685);
+var https = __nccwpck_require__(5687);
+var events = __nccwpck_require__(2361);
+var assert = __nccwpck_require__(9491);
+var util = __nccwpck_require__(3837);
 
 
 exports.httpOverHttp = httpOverHttp;
@@ -4011,7 +4906,653 @@ exports.debug = debug; // for test
 
 /***/ }),
 
-/***/ 491:
+/***/ 5840:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+Object.defineProperty(exports, "v1", ({
+  enumerable: true,
+  get: function () {
+    return _v.default;
+  }
+}));
+Object.defineProperty(exports, "v3", ({
+  enumerable: true,
+  get: function () {
+    return _v2.default;
+  }
+}));
+Object.defineProperty(exports, "v4", ({
+  enumerable: true,
+  get: function () {
+    return _v3.default;
+  }
+}));
+Object.defineProperty(exports, "v5", ({
+  enumerable: true,
+  get: function () {
+    return _v4.default;
+  }
+}));
+Object.defineProperty(exports, "NIL", ({
+  enumerable: true,
+  get: function () {
+    return _nil.default;
+  }
+}));
+Object.defineProperty(exports, "version", ({
+  enumerable: true,
+  get: function () {
+    return _version.default;
+  }
+}));
+Object.defineProperty(exports, "validate", ({
+  enumerable: true,
+  get: function () {
+    return _validate.default;
+  }
+}));
+Object.defineProperty(exports, "stringify", ({
+  enumerable: true,
+  get: function () {
+    return _stringify.default;
+  }
+}));
+Object.defineProperty(exports, "parse", ({
+  enumerable: true,
+  get: function () {
+    return _parse.default;
+  }
+}));
+
+var _v = _interopRequireDefault(__nccwpck_require__(8628));
+
+var _v2 = _interopRequireDefault(__nccwpck_require__(6409));
+
+var _v3 = _interopRequireDefault(__nccwpck_require__(5122));
+
+var _v4 = _interopRequireDefault(__nccwpck_require__(9120));
+
+var _nil = _interopRequireDefault(__nccwpck_require__(5332));
+
+var _version = _interopRequireDefault(__nccwpck_require__(1595));
+
+var _validate = _interopRequireDefault(__nccwpck_require__(6900));
+
+var _stringify = _interopRequireDefault(__nccwpck_require__(8950));
+
+var _parse = _interopRequireDefault(__nccwpck_require__(2746));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+/***/ }),
+
+/***/ 4569:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _crypto = _interopRequireDefault(__nccwpck_require__(6113));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function md5(bytes) {
+  if (Array.isArray(bytes)) {
+    bytes = Buffer.from(bytes);
+  } else if (typeof bytes === 'string') {
+    bytes = Buffer.from(bytes, 'utf8');
+  }
+
+  return _crypto.default.createHash('md5').update(bytes).digest();
+}
+
+var _default = md5;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 5332:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+var _default = '00000000-0000-0000-0000-000000000000';
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 2746:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _validate = _interopRequireDefault(__nccwpck_require__(6900));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function parse(uuid) {
+  if (!(0, _validate.default)(uuid)) {
+    throw TypeError('Invalid UUID');
+  }
+
+  let v;
+  const arr = new Uint8Array(16); // Parse ########-....-....-....-............
+
+  arr[0] = (v = parseInt(uuid.slice(0, 8), 16)) >>> 24;
+  arr[1] = v >>> 16 & 0xff;
+  arr[2] = v >>> 8 & 0xff;
+  arr[3] = v & 0xff; // Parse ........-####-....-....-............
+
+  arr[4] = (v = parseInt(uuid.slice(9, 13), 16)) >>> 8;
+  arr[5] = v & 0xff; // Parse ........-....-####-....-............
+
+  arr[6] = (v = parseInt(uuid.slice(14, 18), 16)) >>> 8;
+  arr[7] = v & 0xff; // Parse ........-....-....-####-............
+
+  arr[8] = (v = parseInt(uuid.slice(19, 23), 16)) >>> 8;
+  arr[9] = v & 0xff; // Parse ........-....-....-....-############
+  // (Use "/" to avoid 32-bit truncation when bit-shifting high-order bytes)
+
+  arr[10] = (v = parseInt(uuid.slice(24, 36), 16)) / 0x10000000000 & 0xff;
+  arr[11] = v / 0x100000000 & 0xff;
+  arr[12] = v >>> 24 & 0xff;
+  arr[13] = v >>> 16 & 0xff;
+  arr[14] = v >>> 8 & 0xff;
+  arr[15] = v & 0xff;
+  return arr;
+}
+
+var _default = parse;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 814:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+var _default = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000)$/i;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 807:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = rng;
+
+var _crypto = _interopRequireDefault(__nccwpck_require__(6113));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+const rnds8Pool = new Uint8Array(256); // # of random values to pre-allocate
+
+let poolPtr = rnds8Pool.length;
+
+function rng() {
+  if (poolPtr > rnds8Pool.length - 16) {
+    _crypto.default.randomFillSync(rnds8Pool);
+
+    poolPtr = 0;
+  }
+
+  return rnds8Pool.slice(poolPtr, poolPtr += 16);
+}
+
+/***/ }),
+
+/***/ 5274:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _crypto = _interopRequireDefault(__nccwpck_require__(6113));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function sha1(bytes) {
+  if (Array.isArray(bytes)) {
+    bytes = Buffer.from(bytes);
+  } else if (typeof bytes === 'string') {
+    bytes = Buffer.from(bytes, 'utf8');
+  }
+
+  return _crypto.default.createHash('sha1').update(bytes).digest();
+}
+
+var _default = sha1;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 8950:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _validate = _interopRequireDefault(__nccwpck_require__(6900));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+/**
+ * Convert array of 16 byte values to UUID string format of the form:
+ * XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+ */
+const byteToHex = [];
+
+for (let i = 0; i < 256; ++i) {
+  byteToHex.push((i + 0x100).toString(16).substr(1));
+}
+
+function stringify(arr, offset = 0) {
+  // Note: Be careful editing this code!  It's been tuned for performance
+  // and works in ways you may not expect. See https://github.com/uuidjs/uuid/pull/434
+  const uuid = (byteToHex[arr[offset + 0]] + byteToHex[arr[offset + 1]] + byteToHex[arr[offset + 2]] + byteToHex[arr[offset + 3]] + '-' + byteToHex[arr[offset + 4]] + byteToHex[arr[offset + 5]] + '-' + byteToHex[arr[offset + 6]] + byteToHex[arr[offset + 7]] + '-' + byteToHex[arr[offset + 8]] + byteToHex[arr[offset + 9]] + '-' + byteToHex[arr[offset + 10]] + byteToHex[arr[offset + 11]] + byteToHex[arr[offset + 12]] + byteToHex[arr[offset + 13]] + byteToHex[arr[offset + 14]] + byteToHex[arr[offset + 15]]).toLowerCase(); // Consistency check for valid UUID.  If this throws, it's likely due to one
+  // of the following:
+  // - One or more input array values don't map to a hex octet (leading to
+  // "undefined" in the uuid)
+  // - Invalid input values for the RFC `version` or `variant` fields
+
+  if (!(0, _validate.default)(uuid)) {
+    throw TypeError('Stringified UUID is invalid');
+  }
+
+  return uuid;
+}
+
+var _default = stringify;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 8628:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _rng = _interopRequireDefault(__nccwpck_require__(807));
+
+var _stringify = _interopRequireDefault(__nccwpck_require__(8950));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+// **`v1()` - Generate time-based UUID**
+//
+// Inspired by https://github.com/LiosK/UUID.js
+// and http://docs.python.org/library/uuid.html
+let _nodeId;
+
+let _clockseq; // Previous uuid creation time
+
+
+let _lastMSecs = 0;
+let _lastNSecs = 0; // See https://github.com/uuidjs/uuid for API details
+
+function v1(options, buf, offset) {
+  let i = buf && offset || 0;
+  const b = buf || new Array(16);
+  options = options || {};
+  let node = options.node || _nodeId;
+  let clockseq = options.clockseq !== undefined ? options.clockseq : _clockseq; // node and clockseq need to be initialized to random values if they're not
+  // specified.  We do this lazily to minimize issues related to insufficient
+  // system entropy.  See #189
+
+  if (node == null || clockseq == null) {
+    const seedBytes = options.random || (options.rng || _rng.default)();
+
+    if (node == null) {
+      // Per 4.5, create and 48-bit node id, (47 random bits + multicast bit = 1)
+      node = _nodeId = [seedBytes[0] | 0x01, seedBytes[1], seedBytes[2], seedBytes[3], seedBytes[4], seedBytes[5]];
+    }
+
+    if (clockseq == null) {
+      // Per 4.2.2, randomize (14 bit) clockseq
+      clockseq = _clockseq = (seedBytes[6] << 8 | seedBytes[7]) & 0x3fff;
+    }
+  } // UUID timestamps are 100 nano-second units since the Gregorian epoch,
+  // (1582-10-15 00:00).  JSNumbers aren't precise enough for this, so
+  // time is handled internally as 'msecs' (integer milliseconds) and 'nsecs'
+  // (100-nanoseconds offset from msecs) since unix epoch, 1970-01-01 00:00.
+
+
+  let msecs = options.msecs !== undefined ? options.msecs : Date.now(); // Per 4.2.1.2, use count of uuid's generated during the current clock
+  // cycle to simulate higher resolution clock
+
+  let nsecs = options.nsecs !== undefined ? options.nsecs : _lastNSecs + 1; // Time since last uuid creation (in msecs)
+
+  const dt = msecs - _lastMSecs + (nsecs - _lastNSecs) / 10000; // Per 4.2.1.2, Bump clockseq on clock regression
+
+  if (dt < 0 && options.clockseq === undefined) {
+    clockseq = clockseq + 1 & 0x3fff;
+  } // Reset nsecs if clock regresses (new clockseq) or we've moved onto a new
+  // time interval
+
+
+  if ((dt < 0 || msecs > _lastMSecs) && options.nsecs === undefined) {
+    nsecs = 0;
+  } // Per 4.2.1.2 Throw error if too many uuids are requested
+
+
+  if (nsecs >= 10000) {
+    throw new Error("uuid.v1(): Can't create more than 10M uuids/sec");
+  }
+
+  _lastMSecs = msecs;
+  _lastNSecs = nsecs;
+  _clockseq = clockseq; // Per 4.1.4 - Convert from unix epoch to Gregorian epoch
+
+  msecs += 12219292800000; // `time_low`
+
+  const tl = ((msecs & 0xfffffff) * 10000 + nsecs) % 0x100000000;
+  b[i++] = tl >>> 24 & 0xff;
+  b[i++] = tl >>> 16 & 0xff;
+  b[i++] = tl >>> 8 & 0xff;
+  b[i++] = tl & 0xff; // `time_mid`
+
+  const tmh = msecs / 0x100000000 * 10000 & 0xfffffff;
+  b[i++] = tmh >>> 8 & 0xff;
+  b[i++] = tmh & 0xff; // `time_high_and_version`
+
+  b[i++] = tmh >>> 24 & 0xf | 0x10; // include version
+
+  b[i++] = tmh >>> 16 & 0xff; // `clock_seq_hi_and_reserved` (Per 4.2.2 - include variant)
+
+  b[i++] = clockseq >>> 8 | 0x80; // `clock_seq_low`
+
+  b[i++] = clockseq & 0xff; // `node`
+
+  for (let n = 0; n < 6; ++n) {
+    b[i + n] = node[n];
+  }
+
+  return buf || (0, _stringify.default)(b);
+}
+
+var _default = v1;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 6409:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _v = _interopRequireDefault(__nccwpck_require__(5998));
+
+var _md = _interopRequireDefault(__nccwpck_require__(4569));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+const v3 = (0, _v.default)('v3', 0x30, _md.default);
+var _default = v3;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 5998:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = _default;
+exports.URL = exports.DNS = void 0;
+
+var _stringify = _interopRequireDefault(__nccwpck_require__(8950));
+
+var _parse = _interopRequireDefault(__nccwpck_require__(2746));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function stringToBytes(str) {
+  str = unescape(encodeURIComponent(str)); // UTF8 escape
+
+  const bytes = [];
+
+  for (let i = 0; i < str.length; ++i) {
+    bytes.push(str.charCodeAt(i));
+  }
+
+  return bytes;
+}
+
+const DNS = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+exports.DNS = DNS;
+const URL = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
+exports.URL = URL;
+
+function _default(name, version, hashfunc) {
+  function generateUUID(value, namespace, buf, offset) {
+    if (typeof value === 'string') {
+      value = stringToBytes(value);
+    }
+
+    if (typeof namespace === 'string') {
+      namespace = (0, _parse.default)(namespace);
+    }
+
+    if (namespace.length !== 16) {
+      throw TypeError('Namespace must be array-like (16 iterable integer values, 0-255)');
+    } // Compute hash of namespace and value, Per 4.3
+    // Future: Use spread syntax when supported on all platforms, e.g. `bytes =
+    // hashfunc([...namespace, ... value])`
+
+
+    let bytes = new Uint8Array(16 + value.length);
+    bytes.set(namespace);
+    bytes.set(value, namespace.length);
+    bytes = hashfunc(bytes);
+    bytes[6] = bytes[6] & 0x0f | version;
+    bytes[8] = bytes[8] & 0x3f | 0x80;
+
+    if (buf) {
+      offset = offset || 0;
+
+      for (let i = 0; i < 16; ++i) {
+        buf[offset + i] = bytes[i];
+      }
+
+      return buf;
+    }
+
+    return (0, _stringify.default)(bytes);
+  } // Function#name is not settable on some platforms (#270)
+
+
+  try {
+    generateUUID.name = name; // eslint-disable-next-line no-empty
+  } catch (err) {} // For CommonJS default export support
+
+
+  generateUUID.DNS = DNS;
+  generateUUID.URL = URL;
+  return generateUUID;
+}
+
+/***/ }),
+
+/***/ 5122:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _rng = _interopRequireDefault(__nccwpck_require__(807));
+
+var _stringify = _interopRequireDefault(__nccwpck_require__(8950));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function v4(options, buf, offset) {
+  options = options || {};
+
+  const rnds = options.random || (options.rng || _rng.default)(); // Per 4.4, set bits for version and `clock_seq_hi_and_reserved`
+
+
+  rnds[6] = rnds[6] & 0x0f | 0x40;
+  rnds[8] = rnds[8] & 0x3f | 0x80; // Copy bytes to buffer, if provided
+
+  if (buf) {
+    offset = offset || 0;
+
+    for (let i = 0; i < 16; ++i) {
+      buf[offset + i] = rnds[i];
+    }
+
+    return buf;
+  }
+
+  return (0, _stringify.default)(rnds);
+}
+
+var _default = v4;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 9120:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _v = _interopRequireDefault(__nccwpck_require__(5998));
+
+var _sha = _interopRequireDefault(__nccwpck_require__(5274));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+const v5 = (0, _v.default)('v5', 0x50, _sha.default);
+var _default = v5;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 6900:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _regex = _interopRequireDefault(__nccwpck_require__(814));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function validate(uuid) {
+  return typeof uuid === 'string' && _regex.default.test(uuid);
+}
+
+var _default = validate;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 1595:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+exports["default"] = void 0;
+
+var _validate = _interopRequireDefault(__nccwpck_require__(6900));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function version(uuid) {
+  if (!(0, _validate.default)(uuid)) {
+    throw TypeError('Invalid UUID');
+  }
+
+  return parseInt(uuid.substr(14, 1), 16);
+}
+
+var _default = version;
+exports["default"] = _default;
+
+/***/ }),
+
+/***/ 9491:
 /***/ ((module) => {
 
 "use strict";
@@ -4019,7 +5560,7 @@ module.exports = require("assert");
 
 /***/ }),
 
-/***/ 81:
+/***/ 2081:
 /***/ ((module) => {
 
 "use strict";
@@ -4027,7 +5568,15 @@ module.exports = require("child_process");
 
 /***/ }),
 
-/***/ 361:
+/***/ 6113:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("crypto");
+
+/***/ }),
+
+/***/ 2361:
 /***/ ((module) => {
 
 "use strict";
@@ -4035,7 +5584,7 @@ module.exports = require("events");
 
 /***/ }),
 
-/***/ 147:
+/***/ 7147:
 /***/ ((module) => {
 
 "use strict";
@@ -4043,7 +5592,7 @@ module.exports = require("fs");
 
 /***/ }),
 
-/***/ 685:
+/***/ 3685:
 /***/ ((module) => {
 
 "use strict";
@@ -4051,7 +5600,7 @@ module.exports = require("http");
 
 /***/ }),
 
-/***/ 687:
+/***/ 5687:
 /***/ ((module) => {
 
 "use strict";
@@ -4059,7 +5608,7 @@ module.exports = require("https");
 
 /***/ }),
 
-/***/ 808:
+/***/ 1808:
 /***/ ((module) => {
 
 "use strict";
@@ -4067,7 +5616,7 @@ module.exports = require("net");
 
 /***/ }),
 
-/***/ 37:
+/***/ 2037:
 /***/ ((module) => {
 
 "use strict";
@@ -4075,7 +5624,7 @@ module.exports = require("os");
 
 /***/ }),
 
-/***/ 17:
+/***/ 1017:
 /***/ ((module) => {
 
 "use strict";
@@ -4083,7 +5632,7 @@ module.exports = require("path");
 
 /***/ }),
 
-/***/ 576:
+/***/ 1576:
 /***/ ((module) => {
 
 "use strict";
@@ -4091,7 +5640,7 @@ module.exports = require("string_decoder");
 
 /***/ }),
 
-/***/ 512:
+/***/ 9512:
 /***/ ((module) => {
 
 "use strict";
@@ -4099,7 +5648,7 @@ module.exports = require("timers");
 
 /***/ }),
 
-/***/ 404:
+/***/ 4404:
 /***/ ((module) => {
 
 "use strict";
@@ -4107,7 +5656,7 @@ module.exports = require("tls");
 
 /***/ }),
 
-/***/ 310:
+/***/ 7310:
 /***/ ((module) => {
 
 "use strict";
@@ -4115,7 +5664,7 @@ module.exports = require("url");
 
 /***/ }),
 
-/***/ 837:
+/***/ 3837:
 /***/ ((module) => {
 
 "use strict";
@@ -4165,7 +5714,7 @@ module.exports = require("util");
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(39);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(9039);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()

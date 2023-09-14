@@ -7,11 +7,17 @@ branding:
 inputs:
   php-version:
     description: 'Setup PHP version.'
-    default: '8.1'
-    required: true
+    required: false
+  php-version-file:
+    description: 'Setup PHP version from a file.'
+    required: false
   extensions:
     description: 'Setup PHP extensions.'
     required: false
+  ini-file:
+    description: 'Set base ini file.'
+    required: false
+    default: 'production'
   ini-values:
     description: 'Add values to php.ini.'
     required: false
@@ -25,5 +31,5 @@ outputs:
   php-version:
     description: 'PHP version in semver format'
 runs:
-  using: 'node12'
+  using: 'node20'
   main: 'dist/index.js'

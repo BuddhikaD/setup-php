@@ -1,3 +1,5 @@
+import path from 'path';
+import fs from 'fs';
 import {exec} from '@actions/exec';
 import * as core from '@actions/core';
 import * as config from './config';
@@ -9,66 +11,51 @@ import * as utils from './utils';
 /**
  * Build the script
  *
- * @param filename
- * @param version
- * @param os_version
+ * @param os
  */
-export async function getScript(
-  filename: string,
-  version: string,
-  os_version: string
-): Promise<string> {
-  const url = 'https://setup-php.com/sponsor';
-  // taking inputs
+export async function getScript(os: string): Promise<string> {
+  const url = 'https://setup-php.com/support-ukraine';
+  const filename = os + (await utils.scriptExtension(os));
+  const script_path = path.join(__dirname, '../src/scripts', filename);
+  const run_path = script_path.replace(os, 'run');
   process.env['fail_fast'] = await utils.getInput('fail-fast', false);
   const extension_csv: string = await utils.getInput('extensions', false);
   const ini_values_csv: string = await utils.getInput('ini-values', false);
   const coverage_driver: string = await utils.getInput('coverage', false);
   const tools_csv: string = await utils.getInput('tools', false);
-
-  let script: string = await utils.readFile(filename, 'src/scripts');
-  script += await tools.addTools(tools_csv, version, os_version);
+  const version: string = await utils.parseVersion(
+    await utils.readPHPVersion()
+  );
+  const ini_file: string = await utils.parseIniFile(
+    await utils.getInput('ini-file', false)
+  );
+  let script = await utils.joins('.', script_path, version, ini_file);
   if (extension_csv) {
-    script += await extensions.addExtension(extension_csv, version, os_version);
+    script += await extensions.addExtension(extension_csv, version, os);
   }
+  script += await tools.addTools(tools_csv, version, os);
   if (coverage_driver) {
-    script += await coverage.addCoverage(coverage_driver, version, os_version);
+    script += await coverage.addCoverage(coverage_driver, version, os);
   }
   if (ini_values_csv) {
-    script += await config.addINIValues(ini_values_csv, os_version);
+    script += await config.addINIValues(ini_values_csv, os);
   }
-  script += '\n' + (await utils.stepLog(`Sponsor setup-php`, os_version));
-  script += '\n' + (await utils.addLog('$tick', 'setup-php', url, os_version));
+  script += '\n' + (await utils.stepLog(`#StandWithUkraine`, os));
+  script += '\n' + (await utils.addLog('$tick', 'read-more', url, os));
 
-  return await utils.writeScript(filename, script);
+  fs.writeFileSync(run_path, script, {mode: 0o755});
+
+  return run_path;
 }
 
 /**
  * Run the script
  */
 export async function run(): Promise<void> {
-  try {
-    if ((await utils.readEnv('ImageOS')) == 'ubuntu16') {
-      core.setFailed(
-        'setup-php is not supported on Ubuntu 16.04. Please upgrade to Ubuntu 18.04 or Ubuntu 20.04 - https://setup-php.com/i/452'
-      );
-      return;
-    }
-    const version: string = await utils.parseVersion(
-      await utils.getInput('php-version', true)
-    );
-    if (version) {
-      const os_version: string = process.platform;
-      const tool = await utils.scriptTool(os_version);
-      const script = os_version + (await utils.scriptExtension(os_version));
-      const location = await getScript(script, version, os_version);
-      await exec(await utils.joins(tool, location, version, __dirname));
-    } else {
-      core.setFailed('Unable to get the PHP version');
-    }
-  } catch (error) {
-    core.setFailed((error as Error).message);
-  }
+  const os: string = process.platform;
+  const tool = await utils.scriptTool(os);
+  const run_path = await getScript(os);
+  await exec(tool + run_path);
 }
 
 // call the run function
